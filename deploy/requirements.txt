@@ -1,0 +1,12 @@
+flask
+opencv-python-headless
+ultralytics
+numpy
+torch
+torchvision
+requests
+pytesseract
+flask-sqlalchemy
+onnx>=1.14.0
+onnxruntime
+python-dotenv

@@ -1,0 +1,1554 @@
+{% extends 'base.html' %}
+{% block title %}Vehicle #{{ vehicle.id }} - Vehicle Identity System{% endblock %}
+{% block page_title %}Vehicle Detail{% endblock %}
+
+{% block content %}
+<div class="row">
+  <!-- Main Content -->
+  <div class="col-md-8">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <div>
+        <a href="{{ url_for('admin.vehicles_list') }}" class="text-muted">
+          <i class="fas fa-arrow-left"></i> Kembali ke Daftar Kendaraan
+        </a>
+        <h4 class="mt-2 mb-0">
+          {% if vehicle.plate_text %}
+            {{ vehicle.plate_text }}
+          {% else %}
+            Kendaraan #{{ vehicle.id }}
+          {% endif %}
+        </h4>
+      </div>
+      <div>
+        {% if vehicle.verified %}
+        <span class="badge badge-verified fs-6">
+          <i class="fas fa-check"></i> Terverifikasi
+        </span>
+        {% else %}
+        <span class="badge badge-unverified fs-6">
+          <i class="fas fa-clock"></i> Belum Verifikasi
+        </span>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Timeline -->
+    <div class="card">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">Linimasa Deteksi</h6>
+        <span class="badge bg-primary">{{ observations.total }} observasi</span>
+      </div>
+      <div class="card-body">
+        <div class="timeline">
+          {% for obs in observations.items %}
+          <div class="timeline-item">
+            <div class="card">
+              <div class="card-body">
+                <div class="row">
+                  <div class="col-md-4">
+                    <!-- 🔧 FIX: Gunakan data dari OBS, bukan VEHICLE -->
+                    <div class="position-relative img-container" 
+                      id="obs-img-container-{{ obs.id }}"
+                      data-obs-id="{{ obs.id }}"
+                      data-vehicle-box="{{ obs.vehicle_box|tojson if obs.vehicle_box else 'null' }}"
+                      data-plate-box="{{ obs.plate_box|tojson if obs.plate_box else 'null' }}"
+                      data-face-box="{{ obs.face_box|tojson if obs.face_box else 'null' }}"
+                      data-body-box="{{ obs.body_box|tojson if obs.body_box else 'null' }}"
+                      data-is-manual="{{ 'true' if obs.is_manually_annotated else 'false' }}"
+                      data-frame-src="{% set src = (obs.frame_image_path or obs.image_path) %}{% if src %}{% if 'static/' in src %}{{ url_for('static', filename=src.split('static/')[-1]) }}{% elif src.startswith('results/') %}/{{ src }}{% else %}/static/{{ src }}{% endif %}{% else %}#{% endif %}">
+                        
+                        {% if obs.annotated_image_path %}
+                        {% if obs.annotated_image_path.startswith('results/') %}
+                        <img
+                          src="/{{ obs.annotated_image_path }}?t={{ image_ts }}"
+                          class="img-fluid rounded vehicle-img"
+                          alt="Annotated"
+                          style="cursor: pointer"
+                          onclick="showImageModal(this.src)"
+                          onload="redrawBoundingBoxes(this.parentElement)"
+                        />
+                        {% else %}
+                        <img
+                          src="{{ url_for('static', filename=obs.annotated_image_path) }}?t={{ image_ts }}"
+                          class="img-fluid rounded vehicle-img"
+                          alt="Annotated"
+                          style="cursor: pointer"
+                          onclick="showImageModal(this.src)"
+                          onload="redrawBoundingBoxes(this.parentElement)"
+                        />
+                        {% endif %}
+                        {% elif obs.image_path or obs.frame_image_path %}
+                        <img
+                          src="{{ url_for('static', filename=(obs.frame_image_path or obs.image_path).split('static/')[-1] if 'static/' in ((obs.frame_image_path or obs.image_path) or '') else (obs.frame_image_path or obs.image_path)) }}?t={{ image_ts }}"
+                          class="img-fluid rounded vehicle-img"
+                          alt="Vehicle"
+                          style="cursor: pointer"
+                          onclick="showImageModal(this.src)"
+                          onload="redrawBoundingBoxes(this.parentElement)"
+                        />
+                        {% else %}
+                        <div class="bg-light rounded d-flex align-items-center justify-content-center" style="height: 150px">
+                          <i class="fas fa-image fa-3x text-muted"></i>
+                        </div>
+                        {% endif %}
+                        
+                        <div class="box-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></div>
+                    </div>
+                  </div>
+                  
+                  <div class="col-md-8">
+                    <h6>
+                      {{ obs.timestamp.strftime('%d %b %Y, %H:%M:%S') if obs.timestamp else 'Unknown time' }}
+                    </h6>
+                    
+                    <!-- 🔧 FIX: Tampilkan data OBS, bukan vehicle -->
+                    <div class="mb-2">
+                      <span class="badge bg-info">{{ obs.source_type or 'image' }}</span>
+                      <span class="badge bg-secondary">{{ obs.vehicle_type or 'Unknown' }}</span>
+                      
+                      {% set color_map = {
+                        'merah': '#fee2e2', 'red': '#fee2e2',
+                        'hitam': '#000000', 'black': '#000000',
+                        'putih': '#ffffff', 'white': '#ffffff',
+                        'biru': '#dbeafe', 'blue': '#dbeafe',
+                        'kuning': '#fef3c7', 'yellow': '#fef3c7',
+                        'abu-abu': '#f3f4f6', 'grey': '#f3f4f6', 'silver': '#f3f4f6',
+                        'hijau': '#dcfce7', 'green': '#dcfce7',
+                        'coklat': '#fef3e8', 'brown': '#fef3e8',
+                        'ungu': '#f3e8ff', 'purple': '#f3e8ff',
+                        'orange': '#fff7ed', 'oranye': '#fff7ed'
+                      } %}
+                      
+                      {% set bg_color = color_map.get((obs.vehicle_color or '')|lower, '#d1d5db') %}
+                      {% set text_color = 'black' if bg_color in ['#ffffff', '#facc15', '#d1d5db'] else 'white' %}
+                      {% set border_style = '1px solid #ccc' if bg_color == '#ffffff' else 'none' %}
+                      
+                      <span class="badge" style="background-color: {{ bg_color }}; color: {{ text_color }}; border: {{ border_style }};">
+                        {{ obs.vehicle_color or 'Unknown' }}
+                      </span>
+                    </div>
+
+                    <!-- OCR Status -->
+                    <div class="mb-2">
+                      <strong>OCR:</strong>
+                      {% if obs.is_manually_annotated and obs.plate_box %}
+                      <span class="badge bg-success">Manual</span>
+                      {% elif obs.ocr_success %}
+                      <span class="badge badge-ocr-success">
+                        {{ obs.plate_text }} ({{ (obs.plate_confidence * 100)|round|int }}%)
+                      </span>
+                      {% elif obs.ocr_attempted %}
+                      <span class="badge badge-ocr-failed">Failed</span>
+                      {% else %}
+                      <span class="badge bg-secondary">Not attempted</span>
+                      {% endif %}
+                    </div>
+
+                    <!-- Pengemudi Status -->
+                    <div class="mb-2">
+                      <strong>Pengemudi:</strong>
+                      {% if obs.driver_detected %}
+                      <span class="badge bg-success">Detected</span>
+                      {% if obs.face_detected or obs.body_box %}
+                      <span class="badge badge-face">Wajah/Badan Tersedia</span>
+                      {% endif %}
+                      {% else %}
+                      <span class="badge bg-secondary">Not detected</span>
+                      {% endif %}
+                    </div>
+
+                    <!-- Confidence Bar -->
+                    <div class="mb-2">
+                      <small class="text-muted">OCR Confidence</small>
+                      <div class="confidence-bar">
+                        <div
+                          class="confidence-fill {{ 'high' if obs.plate_confidence >= 0.7 else 'medium' if obs.plate_confidence >= 0.4 else 'low' }}"
+                          style="width: {{ (obs.plate_confidence * 100)|round|int }}%"
+                        ></div>
+                      </div>
+                    </div>
+
+                    <!-- View crops -->
+                    <div class="btn-group btn-group-sm">
+                      {% if obs.plate_image_path %}
+                        {% if obs.plate_image_path.startswith('results/') %}
+                          <button class="btn btn-outline-warning" onclick="showImageModal('/{{ obs.plate_image_path }}')">
+                            <i class="fas fa-id-card"></i> Plate
+                          </button>
+                        {% else %}
+                          <button class="btn btn-outline-warning" onclick="showImageModal('{{ url_for('static', filename=obs.plate_image_path.split('static/')[-1] if 'static/' in (obs.plate_image_path or '') else obs.plate_image_path) }}')">
+                            <i class="fas fa-id-card"></i> Plate
+                          </button>
+                        {% endif %}
+                      {% endif %}
+
+                      {% if obs.driver_image_path %}
+                        {% if obs.driver_image_path.startswith('results/') %}
+                          <button class="btn btn-outline-danger" onclick="showImageModal('/{{ obs.driver_image_path }}')">
+                            <i class="fas fa-user"></i> Pengemudi
+                          </button>
+                        {% else %}
+                          <button class="btn btn-outline-danger" onclick="showImageModal('{{ url_for('static', filename=obs.driver_image_path.split('static/')[-1] if 'static/' in (obs.driver_image_path or '') else obs.driver_image_path) }}')">
+                            <i class="fas fa-user"></i> Pengemudi
+                          </button>
+                        {% endif %}
+                      {% elif obs.is_manually_annotated and (obs.face_box or obs.body_box) %}
+                        <button class="btn btn-outline-danger" onclick="showDriverCrop({{ obs.id }})">
+                          <i class="fas fa-user"></i> Pengemudi
+                        </button>
+                      {% endif %}
+
+                      {% if obs.frame_image_path %}
+                        {% if obs.frame_image_path.startswith('results/') %}
+                          <button class="btn btn-outline-primary" onclick="showImageModal('/{{ obs.frame_image_path }}')">
+                            <i class="fas fa-expand"></i> Frame
+                          </button>
+                        {% else %}
+                          <button class="btn btn-outline-primary" onclick="showImageModal('{{ url_for('static', filename=obs.frame_image_path.split('static/')[-1] if 'static/' in (obs.frame_image_path or '') else obs.frame_image_path) }}')">
+                            <i class="fas fa-expand"></i> Frame
+                          </button>
+                        {% endif %}
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% else %}
+          <p class="text-muted text-center">No observations yet</p>
+          {% endfor %}
+        </div>
+
+        <!-- Pagination -->
+        {% if observations.pages > 1 %}
+        <nav class="mt-4">
+          <ul class="pagination justify-content-center">
+            {% if observations.has_prev %}
+            <li class="page-item">
+              <a class="page-link" href="?page={{ observations.prev_num }}">
+                <i class="fas fa-chevron-left"></i>
+              </a>
+            </li>
+            {% endif %}
+            
+            {% for p in observations.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+              {% if p %}
+              <li class="page-item {{ 'active' if p == observations.page else '' }}">
+                <a class="page-link" href="?page={{ p }}">{{ p }}</a>
+              </li>
+              {% else %}
+              <li class="page-item disabled">
+                <span class="page-link">...</span>
+              </li>
+              {% endif %}
+            {% endfor %}
+            
+            {% if observations.has_next %}
+            <li class="page-item">
+              <a class="page-link" href="?page={{ observations.next_num }}">
+                <i class="fas fa-chevron-right"></i>
+              </a>
+            </li>
+            {% endif %}
+          </ul>
+        </nav>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="col-md-4">
+    <!-- Identity Info -->
+    <div class="card mb-4">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">Informasi Identitas</h6>
+        <button class="btn btn-sm btn-outline-primary" onclick="openEditIdentityModal()">
+          <i class="fas fa-edit"></i> Edit
+        </button>
+      </div>
+      <div class="card-body">
+        <ul class="list-group list-group-flush">
+          <li class="list-group-item px-0">
+            <small class="text-muted d-block">ID Identitas</small>
+            <code id="identity-id">{{ vehicle.id }}</code>
+          </li>
+          
+          <li class="list-group-item px-0">
+            <small class="text-muted d-block">Nomor Plat (Validasi)</small>
+            <h5 class="mb-0" id="identity-plate">
+              {% if vehicle.plate_text %}
+                {{ vehicle.plate_text }}
+              {% else %}
+                <span class="text-muted">Tidak Diketahui</span>
+              {% endif %}
+              
+              {% if vehicle.is_manually_annotated %}
+              <span class="badge bg-info text-white ms-1" title="Diverifikasi Manual">
+                <i class="fas fa-check-double"></i> Terverifikasi
+              </span>
+              {% endif %}
+            </h5>
+            <small class="text-muted" id="identity-confidence">
+              Tingkat Keyakinan: {{ (vehicle.plate_confidence * 100)|round|int }}%
+            </small>
+          </li>
+          
+          <li class="list-group-item px-0">
+            <small class="text-muted d-block">Jenis Kendaraan</small>
+            {% set type_map = {'car': 'Mobil', 'motorcycle': 'Motor', 'bus': 'Bus', 'truck': 'Truk'} %}
+            <span class="badge bg-secondary fs-6" id="identity-type">
+              {{ type_map.get(vehicle.vehicle_type, vehicle.vehicle_type) or 'Tidak Diketahui' }}
+            </span>
+          </li>
+          
+          <li class="list-group-item px-0">
+            <small class="text-muted d-block">Warna Kendaraan</small>
+            {% set color_map = {
+              'merah': '#fee2e2', 'red': '#fee2e2',
+              'hitam': '#000000', 'black': '#000000',
+              'putih': '#ffffff', 'white': '#ffffff',
+              'biru': '#dbeafe', 'blue': '#dbeafe',
+              'kuning': '#fef3c7', 'yellow': '#fef3c7',
+              'abu-abu': '#f3f4f6', 'grey': '#f3f4f6', 'silver': '#f3f4f6',
+              'hijau': '#dcfce7', 'green': '#dcfce7',
+              'coklat': '#fef3e8', 'brown': '#fef3e8',
+              'ungu': '#f3e8ff', 'purple': '#f3e8ff',
+              'orange': '#fff7ed', 'oranye': '#fff7ed'
+            } %}
+            {% set bg_color = color_map.get((vehicle.vehicle_color or '')|lower, '#d1d5db') %}
+            {% set text_color = 'black' if bg_color in ['#ffffff', '#facc15', '#d1d5db'] else 'white' %}
+            {% set border_style = '1px solid #ccc' if bg_color == '#ffffff' else 'none' %}
+            
+            <span class="badge fs-6" id="identity-color" style="background-color: {{ bg_color }}; color: {{ text_color }}; border: {{ border_style }};">
+              {{ vehicle.vehicle_color or 'Tidak Diketahui' }}
+            </span>
+          </li>
+          
+          <li class="list-group-item px-0">
+            <small class="text-muted d-block">Nama Pengemudi</small>
+            <strong id="identity-driver-name">{{ vehicle.driver_name or 'Tidak Diketahui' }}</strong>
+          </li>
+          
+          <li class="list-group-item px-0">
+            <small class="text-muted d-block">Nomor Identitas / KTP</small>
+            <span id="identity-driver-id">{{ vehicle.driver_id_card or '-' }}</span>
+          </li>
+          
+          <li class="list-group-item px-0">
+            <small class="text-muted d-block">Status Verifikasi Wajah</small>
+            <span id="identity-face-status">
+              {% if vehicle.driver_face_status == 'verified' %}
+                <span class="badge bg-success" style="cursor: pointer;" onclick="showDriverFace()" title="Lihat Foto Wajah">
+                  Terverifikasi <i class="fas fa-eye ms-1"></i>
+                </span>
+              {% elif vehicle.driver_face_status == 'unverified' %}
+                <span class="badge bg-warning text-dark">Belum Terverifikasi</span>
+              {% else %}
+                <span class="badge bg-secondary">Tidak Tersedia</span>
+              {% endif %}
+            </span>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="card mb-4">
+      <div class="card-header bg-white">
+        <h6 class="mb-0">Aksi</h6>
+      </div>
+      <div class="card-body" data-id="{{ vehicle.id }}">
+        {% if not vehicle.verified %}
+        <button class="btn btn-success w-100 mb-2" onclick="verifyIdentity({{ vehicle.id }})">
+          <i class="fas fa-check"></i> Verifikasi Identitas
+        </button>
+        {% else %}
+        <button class="btn btn-warning w-100 mb-2" onclick="unverifyIdentity({{ vehicle.id }})">
+          <i class="fas fa-undo"></i> Batalkan Verifikasi
+        </button>
+        {% endif %}
+        
+        <button class="btn btn-outline-primary w-100 mb-2" onclick="editPlate({{ vehicle.id }}, '{{ vehicle.plate_text or '' }}')">
+          <i class="fas fa-edit"></i> Edit Plat
+        </button>
+        
+        <a href="{{ url_for('admin.merge_page') }}?identity={{ vehicle.id }}" class="btn btn-outline-info w-100 mb-2">
+          <i class="fas fa-code-branch"></i> Gabung/Pisah
+        </a>
+        
+        <button class="btn btn-outline-danger w-100" onclick="deleteIdentity({{ vehicle.id }})">
+          <i class="fas fa-trash"></i> Hapus Identitas
+        </button>
+      </div>
+    </div>
+
+    <!-- Merge History -->
+    {% if merge_history %}
+    <div class="card">
+      <div class="card-header bg-white">
+        <h6 class="mb-0">Riwayat</h6>
+      </div>
+      <div class="card-body">
+        <ul class="list-unstyled small">
+          {% for entry in merge_history %}
+          <li class="mb-2">
+            <span class="badge bg-secondary">{{ entry.action }}</span>
+            Identitas #{{ entry.identity_id }}
+            <br /><small class="text-muted">{{ entry.at }}</small>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Image Modal -->
+<div class="modal fade" id="imageModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-body text-center p-0">
+        <img src="" id="modalImage" class="img-fluid" />
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Driver Face Modal -->
+<div class="modal fade" id="driverFaceModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Identitas Pengemudi (Crop)</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body text-center bg-dark">
+        <canvas id="driverFaceCanvas" class="img-fluid"></canvas>
+        <p class="text-white mt-2 mb-0" id="driverFaceStatusText"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Driver Crop Modal (Dynamic Cropping) -->
+<div class="modal fade" id="driverCropModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Identitas Pengemudi</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <ul class="nav nav-tabs mb-3" id="driverCropTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="face-tab" data-bs-toggle="tab" data-bs-target="#faceTabPane" type="button" role="tab">
+              <i class="fas fa-user"></i> Wajah
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="body-tab" data-bs-toggle="tab" data-bs-target="#bodyTabPane" type="button" role="tab">
+              <i class="fas fa-user-circle"></i> Badan
+            </button>
+          </li>
+        </ul>
+        <div class="tab-content" id="driverCropTabContent">
+          <div class="tab-pane fade show active text-center bg-dark p-3" id="faceTabPane" role="tabpanel">
+            <canvas id="faceCropCanvas" class="img-fluid" style="max-width: 100%; aspect-ratio: 1/1; width: 100%; height: auto;"></canvas>
+            <p class="text-white mt-2 mb-0" id="faceCropStatus">Tidak ada data wajah</p>
+          </div>
+          <div class="tab-pane fade text-center bg-dark p-3" id="bodyTabPane" role="tabpanel">
+            <canvas id="bodyCropCanvas" class="img-fluid" style="max-width: 100%; aspect-ratio: 1/1; width: 100%; height: auto;"></canvas>
+            <p class="text-white mt-2 mb-0" id="bodyCropStatus">Tidak ada data badan</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Identity Modal -->
+<!-- Edit Identity Modal -->
+<style>
+  /* Modal canvas wrapper and form layering to prevent overlap */
+  #canvas-wrapper { max-height: 60vh; overflow: hidden; position: relative; }
+  #annotationCanvas, #canvas-wrapper img { max-width: 100%; height: auto; object-fit: contain; display: block; }
+  #form-area { position: relative; z-index: 10; background: #fff; padding: 12px; }
+ </style>
+<div class="modal fade" id="editIdentityModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Anotasi & Verifikasi Data</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <!-- 1. VISUAL AREA -->
+        <div id="canvas-wrapper" class="mb-2 text-center">
+          <label class="form-label d-block text-start">Anotasi Visual (Wajib Wajah)</label>
+          <canvas id="annotationCanvas" style="border: 1px solid #ccc; cursor: crosshair;"></canvas>
+        </div>
+
+        <!-- Toolbar: Mode switch + Zoom + Draw Buttons -->
+        <div id="annotationToolbar" class="mt-2 d-flex flex-row flex-wrap justify-content-center gap-2 align-items-center">
+          <!-- Mode Switch -->
+          <div class="btn-group" role="group" aria-label="Interaction mode">
+            <button type="button" class="btn btn-sm btn-primary" id="btnEditMode" onclick="setInteractionMode('edit')">
+              <i class="fas fa-mouse-pointer"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnDrawMode" onclick="setInteractionMode('draw')">
+              <i class="fas fa-pen"></i>
+            </button>
+          </div>
+
+          <!-- Zoom Controls -->
+          <div class="d-flex align-items-center gap-2">
+            <button class="btn btn-sm btn-outline-secondary" onclick="zoomOut()" title="Zoom Out">
+              <i class="fas fa-minus"></i>
+            </button>
+            <span id="zoomLevel" class="badge bg-secondary">100%</span>
+            <button class="btn btn-sm btn-outline-secondary" onclick="zoomIn()" title="Zoom In">
+              <i class="fas fa-plus"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="resetZoom()" title="Reset Zoom">
+              <i class="fas fa-undo"></i>
+            </button>
+          </div>
+
+          <!-- Draw/annotation buttons -->
+          <div class="vr" style="height:24px"></div>
+          <button type="button" class="btn btn-sm btn-outline-success" id="btnDrawVehicle" onclick="setDrawMode('vehicle')">
+            <i class="fas fa-car"></i> Kendaraan
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-warning" id="btnDrawPlate" onclick="setDrawMode('plate')">
+            <i class="fas fa-id-card"></i> Plat Nomor
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-danger active" id="btnDrawFace" onclick="setDrawMode('face')">
+            <i class="fas fa-user"></i> Wajah
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnDrawBody" onclick="setDrawMode('body')">
+            <i class="fas fa-user-circle"></i> Badan
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearCanvas()">
+            <i class="fas fa-trash"></i> Reset
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-danger" id="btnDeleteObject" onclick="deleteSelectedBox()" title="Hapus Objek Terpilih">
+            <i class="fas fa-trash-alt"></i> Hapus Objek
+          </button>
+        </div>
+
+        <hr class="my-3">
+
+        <!-- 2. FORM AREA (BAWAH) - SEPARATE BLOCK -->
+        <div id="form-area">
+        <form id="editIdentityForm">
+          <input type="hidden" name="id" value="{{ vehicle.id }}">
+          <input type="hidden" name="vehicle_box" id="vehicleBoxInput">
+          <input type="hidden" name="plate_box" id="plateBoxInput">
+          <input type="hidden" name="face_box" id="faceBoxInput">
+          <input type="hidden" name="body_box" id="bodyBoxInput">
+          
+          <div class="mb-3">
+            <label class="form-label">Nomor Plat (Validasi)</label>
+            <input type="text" class="form-control" name="plate_text" value="{{ vehicle.plate_text or '' }}">
+            <div class="form-text">Mengubah ini akan membuat override dataset manual.</div>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Jenis Kendaraan</label>
+              <select class="form-select" name="vehicle_type">
+                <option value="car" {% if vehicle.vehicle_type == 'car' %}selected{% endif %}>Mobil</option>
+                <option value="motorcycle" {% if vehicle.vehicle_type == 'motorcycle' %}selected{% endif %}>Motor</option>
+                <option value="bus" {% if vehicle.vehicle_type == 'bus' %}selected{% endif %}>Bus</option>
+                <option value="truck" {% if vehicle.vehicle_type == 'truck' %}selected{% endif %}>Truk</option>
+              </select>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Warna Kendaraan</label>
+              <select class="form-select" name="vehicle_color">
+                {% for color in ['putih', 'hitam', 'silver', 'abu-abu', 'merah', 'biru', 'kuning', 'hijau', 'coklat', 'orange', 'ungu'] %}
+                <option value="{{ color }}" {% if (vehicle.vehicle_color or '')|lower == color %}selected{% endif %}>{{ color|title }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <hr>
+          <h6>Informasi Pengemudi</h6>
+          
+          <div class="mb-3">
+            <label class="form-label">Nama Pengemudi</label>
+            <input type="text" class="form-control" name="driver_name" value="{{ vehicle.driver_name or '' }}">
+          </div>
+          
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Nomor Identitas / KTP</label>
+              <input type="text" class="form-control" name="driver_id_card" value="{{ vehicle.driver_id_card or '' }}">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Status Wajah</label>
+              <select class="form-select" name="driver_face_status">
+                <option value="not_available" {% if vehicle.driver_face_status == 'not_available' %}selected{% endif %}>Tidak Tersedia</option>
+                <option value="verified" {% if vehicle.driver_face_status == 'verified' %}selected{% endif %}>Terverifikasi</option>
+                <option value="unverified" {% if vehicle.driver_face_status == 'unverified' %}selected{% endif %}>Belum Terverifikasi</option>
+              </select>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+        <button type="button" class="btn btn-primary" onclick="submitEditIdentity()">Simpan & Verifikasi Data</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // 🔧 SYNC FUNCTION: Update Sidebar from Latest Observation
+  function syncIdentityFromObservations() {
+      const firstObs = document.querySelector('.timeline-item');
+      if (!firstObs) return;
+      
+      const container = firstObs.querySelector('.img-container');
+      if (!container) return;
+      
+      // Get latest observation data
+      const obsData = {
+          plateText: firstObs.querySelector('.badge-ocr-success')?.textContent.split('(')[0].trim(),
+          vehicleType: firstObs.querySelectorAll('.badge')[1]?.textContent.trim(),
+          vehicleColor: firstObs.querySelectorAll('.badge')[2]?.textContent.trim(),
+          confidence: container.dataset.confidence || '0',
+          isManual: container.dataset.isManual === 'true'
+      };
+      
+      // Update Sidebar if data exists
+      if (obsData.plateText) {
+          document.getElementById('identity-plate').innerHTML = obsData.plateText + 
+              (obsData.isManual ? ' <span class="badge bg-info text-white ms-1"><i class="fas fa-check-double"></i> Terverifikasi</span>' : '');
+      }
+      
+      if (obsData.vehicleType) {
+          document.getElementById('identity-type').textContent = obsData.vehicleType;
+      }
+      
+      if (obsData.vehicleColor) {
+          const colorBadge = document.getElementById('identity-color');
+          colorBadge.textContent = obsData.vehicleColor;
+      }
+  }
+
+  function showImageModal(src) {
+      // Append cache-busting timestamp when showing modal images
+      const modalImg = document.getElementById('modalImage');
+      let finalSrc = src || '';
+      if (finalSrc && !finalSrc.includes('?')) finalSrc = finalSrc + '?t=' + IMAGE_TS;
+      else if (finalSrc) finalSrc = finalSrc + '&t=' + IMAGE_TS;
+      modalImg.src = finalSrc;
+      new bootstrap.Modal(document.getElementById('imageModal')).show();
+  }
+
+  function verifyIdentity(id) {
+      confirmAction('Verifikasi Identitas?', 'Apakah Anda yakin ingin memverifikasi identitas ini sebagai Ground Truth?', 'Ya, Verifikasi', () => {
+          fetch(`/api/identities/${id}/verify`, { method: 'POST' })
+              .then(r => r.json())
+              .then(data => {
+                  if (data.success) {
+                      updateVerificationStatus(true);
+                      showSuccess('Identitas berhasil diverifikasi');
+                  } else {
+                      showError(data.error);
+                  }
+              })
+              .catch(e => showError('API Connection Error'));
+      });
+  }
+
+  function unverifyIdentity(id) {
+      confirmAction('Batalkan Verifikasi?', 'Status verifikasi akan dicabut.', 'Ya, Batalkan', () => {
+          fetch(`/api/identities/${id}/unverify`, { method: 'POST' })
+              .then(r => r.json())
+              .then(data => {
+                  if (data.success) {
+                      showSuccess('Status verifikasi dibatalkan!');
+                      updateVerificationStatus(false);
+                  } else {
+                      showError(data.error || 'Gagal membatalkan');
+                  }
+              })
+              .catch(e => showError('API Connection Error'));
+      });
+  }
+
+  function updateVerificationStatus(isVerified) {
+      const badges = document.querySelectorAll('.badge-verified, .badge-unverified');
+      badges.forEach(badge => {
+          if (isVerified) {
+              badge.className = 'badge badge-verified fs-6';
+              badge.innerHTML = '<i class="fas fa-check"></i> Terverifikasi';
+          } else {
+              badge.className = 'badge badge-unverified fs-6';
+              badge.innerHTML = '<i class="fas fa-clock"></i> Belum Verifikasi';
+          }
+      });
+
+      const actionsDiv = document.querySelector('.card-body[data-id]');
+      if (actionsDiv) {
+          const vehicleId = actionsDiv.dataset.id;
+          const verifyBtn = actionsDiv.querySelector('.btn-success');
+          const unverifyBtn = actionsDiv.querySelector('.btn-warning');
+
+          if (isVerified && verifyBtn) {
+              verifyBtn.outerHTML = `<button class="btn btn-warning w-100 mb-2" onclick="unverifyIdentity(${vehicleId})"><i class="fas fa-undo"></i> Batalkan Verifikasi</button>`;
+          } else if (!isVerified && unverifyBtn) {
+              unverifyBtn.outerHTML = `<button class="btn btn-success w-100 mb-2" onclick="verifyIdentity(${vehicleId})"><i class="fas fa-check"></i> Verifikasi Identitas</button>`;
+          }
+      }
+  }
+
+  function editPlate(id, currentPlate) {
+      Swal.fire({
+          title: 'Edit Nomor Plat',
+          input: 'text',
+          inputValue: currentPlate,
+          showCancelButton: true,
+          confirmButtonText: 'Simpan',
+          cancelButtonText: 'Batal',
+          showLoaderOnConfirm: true,
+          preConfirm: (newPlate) => {
+              return fetch(`/api/identities/${id}/plate`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ plate_text: newPlate })
+              })
+              .then(response => {
+                  if (!response.ok) throw new Error(response.statusText);
+                  return response.json();
+              })
+              .catch(error => {
+                  Swal.showValidationMessage(`Permintaan gagal: ${error}`);
+              });
+          },
+          allowOutsideClick: () => !Swal.isLoading()
+      }).then((result) => {
+          if (result.isConfirmed && result.value.success) {
+              showSuccess('Plat berhasil diperbarui');
+              document.getElementById('identity-plate').innerHTML = `${newPlate} <span class="badge bg-info text-white ms-1"><i class="fas fa-check-double"></i> Terverifikasi</span>`;
+          } else if (result.isConfirmed) {
+              showError(result.value.error);
+          }
+      });
+  }
+
+  function deleteIdentity(id) {
+      confirmAction('Hapus Identitas?', 'Ini akan menghapus identitas dan SEMUA observasi terkait secara permanen. Tindakan ini tidak dapat dibatalkan.', 'Ya, Hapus Semua', () => {
+          fetch(`/api/identities/${id}`, { method: 'DELETE' })
+              .then(r => r.json())
+              .then(data => {
+                  if (data.success) {
+                      Swal.fire('Terhapus!', 'Identitas telah dihapus.', 'success').then(() => {
+                          window.location.href = '{{ url_for('admin.vehicles_list') }}';
+                      });
+                  } else {
+                      showError(data.error);
+                  }
+              })
+              .catch(e => showError('API Connection Error'));
+      });
+  }
+
+  // Canvas Logic
+  let canvas, ctx;
+  let isDrawing = false;
+  let startX, startY;
+  // currentMode: bbox type being drawn/edited
+  let currentMode = 'face';
+  // interaction mode: 'edit' or 'draw'
+  let interactionMode = 'edit';
+  // zoom only affects display transform
+  let currentZoom = 1.0;
+  const ZOOM_MIN = 0.5, ZOOM_MAX = 3.0, ZOOM_STEP = 0.25;
+  let boxes = { vehicle: null, plate: null, face: null, body: null };
+  let imageObj = new Image();
+  // currently selected box key for deletion/context menu
+  let selectedBoxKey = null;
+  // Image timestamp for cache-busting (provided by backend)
+  const IMAGE_TS = {{ image_ts if image_ts is defined else 'Date.now()' }};
+
+  // Global helpers to map display mouse coords -> image pixel coords
+  function toImageCoordsGlobal(cx, cy) {
+      if (!canvas) return { x: cx, y: cy };
+      const rect = canvas.getBoundingClientRect();
+      const relX = cx / rect.width;
+      const relY = cy / rect.height;
+      return { x: Math.round(relX * canvas.width), y: Math.round(relY * canvas.height) };
+  }
+
+  function hitTestBoxGlobal(px, py) {
+      const p = toImageCoordsGlobal(px, py);
+      const ix = p.x; const iy = p.y;
+      for (const k of ['face','body','plate','vehicle']) {
+        const b = boxes[k];
+        if (!b) continue;
+        const [x,y,w,h] = b;
+        if (ix >= x && ix <= x + w && iy >= y && iy <= y + h) return k;
+      }
+      return null;
+  }
+
+  function cornerHitGlobal(px, py, key) {
+      if (!key) return null;
+      const b = boxes[key];
+      if (!b) return null;
+      const rect = canvas.getBoundingClientRect();
+      const scale = imageObj.width / canvas.width || 1;
+      const ix = Math.round(px * scale);
+      const iy = Math.round(py * scale);
+      const [x,y,w,h] = b;
+      const corners = { tl: [x, y], tr: [x + w, y], bl: [x, y + h], br: [x + w, y + h],
+                        tm: [x + Math.floor(w/2), y], bm: [x + Math.floor(w/2), y + h],
+                        lm: [x, y + Math.floor(h/2)], rm: [x + w, y + Math.floor(h/2)] };
+      for (const c in corners) {
+        const [cx, cy] = corners[c];
+        const dx = Math.abs(cx - ix);
+        const dy = Math.abs(cy - iy);
+        if (dx <= 8 && dy <= 8) return c;
+      }
+      return null;
+  }
+
+  function setInteractionMode(mode) {
+      interactionMode = mode === 'draw' ? 'draw' : 'edit';
+      // UI toggle (visual feedback)
+      const btnDraw = document.getElementById('btnDrawMode');
+      const btnEdit = document.getElementById('btnEditMode');
+      if (btnDraw && btnEdit) {
+        if (interactionMode === 'draw') {
+          btnDraw.classList.add('btn-primary'); btnDraw.classList.remove('btn-outline-secondary'); btnDraw.classList.add('active');
+          btnEdit.classList.remove('btn-primary'); btnEdit.classList.add('btn-outline-secondary'); btnEdit.classList.remove('active');
+        } else {
+          btnEdit.classList.add('btn-primary'); btnEdit.classList.remove('btn-outline-secondary'); btnEdit.classList.add('active');
+          btnDraw.classList.remove('btn-primary'); btnDraw.classList.add('btn-outline-secondary'); btnDraw.classList.remove('active');
+        }
+      }
+      // cursor
+      if (canvas) canvas.style.cursor = interactionMode === 'draw' ? 'crosshair' : 'default';
+  }
+
+  function zoomIn() {
+      if (currentZoom < ZOOM_MAX) {
+          currentZoom = Math.min(ZOOM_MAX, currentZoom + ZOOM_STEP);
+          applyZoom();
+      }
+  }
+
+  function zoomOut() {
+      if (currentZoom > ZOOM_MIN) {
+          currentZoom = Math.max(ZOOM_MIN, currentZoom - ZOOM_STEP);
+          applyZoom();
+      }
+  }
+
+  function resetZoom() {
+      currentZoom = 1.0;
+      applyZoom();
+  }
+
+    // reloadFrame and placeholder reload logic removed to avoid layout/UX changes
+
+  function applyZoom() {
+      if (!canvas) return;
+      canvas.style.transform = `scale(${currentZoom})`;
+      canvas.style.transformOrigin = 'top left';
+      const zl = document.getElementById('zoomLevel');
+      if (zl) zl.textContent = Math.round(currentZoom * 100) + '%';
+  }
+
+  function initCanvas(imageUrl) {
+      canvas = document.getElementById('annotationCanvas');
+      ctx = canvas.getContext('2d');
+
+      // Interaction state for drag/resize
+      let action = null; // 'draw'|'move'|'resize' or null
+      let selectedKey = null;
+      let resizeCorner = null;
+
+      // use provided imageUrl (no reload placeholder logic)
+
+      imageObj.onload = function() {
+        // Use natural image size for internal canvas resolution
+        const naturalW = imageObj.naturalWidth || imageObj.width;
+        const naturalH = imageObj.naturalHeight || imageObj.height;
+
+        // Set internal canvas to natural pixel size to keep coordinates stable
+        canvas.width = naturalW;
+        canvas.height = naturalH;
+
+        // Constrain CSS display size to fit modal (max-width:100%, max-height:80vh applied in wrapper)
+        canvas.style.width = '100%';
+        canvas.style.height = 'auto';
+
+        // Default to edit interaction and apply zoom
+        setInteractionMode('edit');
+        applyZoom();
+
+        // Redraw now that sizes are set
+        redrawCanvas();
+      };
+      // Start loading
+      imageObj.src = imageUrl;
+
+      // local aliases to global helpers
+      function toImageCoords(cx, cy) { return toImageCoordsGlobal(cx, cy); }
+
+      function hitTestBox(px, py) { return hitTestBoxGlobal(px, py); }
+
+      function cornerHit(px, py, key) { return cornerHitGlobal(px, py, key); }
+
+      canvas.onmousedown = function(e) {
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+
+        // Check if clicking on existing box (priority: face/body/plate/vehicle)
+        const hitKey = hitTestBox(mx, my);
+        const corner = cornerHit(mx, my, hitKey);
+
+        if (corner && interactionMode === 'edit') {
+          action = 'resize';
+          selectedKey = hitKey;
+          resizeCorner = corner;
+          selectedBoxKey = selectedKey;
+        } else if (hitKey && interactionMode === 'edit') {
+          action = 'move';
+          selectedKey = hitKey;
+          selectedBoxKey = selectedKey;
+        } else if (interactionMode === 'draw') {
+          action = 'draw';
+          selectedKey = currentMode;
+          const p = toImageCoords(mx, my);
+          startX = p.x; startY = p.y;
+        } else {
+          action = null; selectedKey = null; resizeCorner = null;
+        }
+        isDrawing = !!action;
+      };
+
+      canvas.onmousemove = function(e) {
+        if (!isDrawing) return;
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const p = toImageCoords(mx, my);
+
+        if (action === 'draw') {
+          // show preview in canvas coords
+          redrawCanvas();
+          const sx = startX;
+          const sy = startY;
+          const w = (p.x - startX);
+          const h = (p.y - startY);
+          drawRect(sx, sy, w, h, selectedKey, true);
+          return;
+        }
+
+        if (action === 'move' && selectedKey) {
+          if (!boxes[selectedKey]) return;
+          const b = boxes[selectedKey];
+          const dx = p.x - (startX || p.x);
+          const dy = p.y - (startY || p.y);
+          b[0] = Math.max(0, b[0] + dx);
+          b[1] = Math.max(0, b[1] + dy);
+          startX = p.x; startY = p.y;
+          redrawCanvas();
+          return;
+        }
+
+        if (action === 'resize' && selectedKey) {
+          const b = boxes[selectedKey];
+          if (!b) return;
+          let [x,y,w,h] = b;
+          if (resizeCorner === 'tl') {
+            const nx = p.x; const ny = p.y;
+            const nw = (x + w) - nx; const nh = (y + h) - ny;
+            boxes[selectedKey] = [Math.max(0,nx), Math.max(0,ny), Math.max(1,nw), Math.max(1,nh)];
+          } else if (resizeCorner === 'tr') {
+            const nx2 = p.x; const ny = p.y;
+            const nw = Math.max(1, nx2 - x); const nh = Math.max(1, (y + h) - ny);
+            boxes[selectedKey] = [x, Math.max(0,ny), nw, nh];
+          } else if (resizeCorner === 'bl') {
+            const nx = p.x; const ny2 = p.y;
+            const nw = Math.max(1, (x + w) - nx); const nh = Math.max(1, ny2 - y);
+            boxes[selectedKey] = [Math.max(0,nx), y, nw, nh];
+          } else if (resizeCorner === 'br') {
+            const nx2 = p.x; const ny2 = p.y;
+            boxes[selectedKey] = [x, y, Math.max(1, nx2 - x), Math.max(1, ny2 - y)];
+          }
+          redrawCanvas();
+          return;
+        }
+      };
+
+      canvas.onmouseup = function(e) {
+        if (!isDrawing) return;
+        isDrawing = false;
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const p = toImageCoords(mx, my);
+
+        if (action === 'draw' && selectedKey) {
+          const x = Math.max(0, Math.round(Math.min(startX, p.x)));
+          const y = Math.max(0, Math.round(Math.min(startY, p.y)));
+          const w = Math.round(Math.abs(p.x - startX));
+          const h = Math.round(Math.abs(p.y - startY));
+          boxes[selectedKey] = [x, y, w, h];
+        }
+
+        // reset action anchors
+        action = null; selectedKey = null; resizeCorner = null; startX = null; startY = null;
+        // keep selectedBoxKey as last selection (for deletion/context)
+        redrawCanvas();
+      };
+
+      // Context menu (right click) to delete a box
+      canvas.oncontextmenu = function(e) {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const hit = hitTestBoxGlobal(mx, my);
+        if (hit) {
+          if (confirm('Hapus objek ini?')) {
+            boxes[hit] = null;
+            selectedBoxKey = null;
+            redrawCanvas();
+          }
+        }
+        return false;
+      };
+  }
+
+  // Global key handler for Delete/Backspace to remove selected box
+  document.addEventListener('keydown', function(e) {
+      if (!selectedBoxKey) return;
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+          boxes[selectedBoxKey] = null;
+          selectedBoxKey = null;
+          try { redrawCanvas(); } catch (err) { }
+      }
+  });
+
+    // Button-triggered delete of selected object
+    function deleteSelectedBox() {
+      if (!selectedBoxKey) {
+        Swal.fire('Info', 'Tidak ada objek yang dipilih untuk dihapus.', 'info');
+        return;
+      }
+      boxes[selectedBoxKey] = null;
+      selectedBoxKey = null;
+      try { redrawCanvas(); } catch (e) { }
+    }
+
+  function redrawCanvas() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(imageObj, 0, 0, canvas.width, canvas.height);
+      
+      if (boxes.vehicle) drawBoxFromCoords(boxes.vehicle, 'vehicle');
+      if (boxes.plate) drawBoxFromCoords(boxes.plate, 'plate');
+      if (boxes.body) drawBoxFromCoords(boxes.body, 'body');
+      if (boxes.face) drawBoxFromCoords(boxes.face, 'face');
+  }
+
+  function drawBoxFromCoords(box, mode) {
+      // Canvas internal pixel size equals original image size, so coordinates map directly
+      drawRect(box[0], box[1], box[2], box[3], mode, false);
+  }
+
+  function drawRect(x, y, w, h, mode, isDrag) {
+      ctx.beginPath();
+      // Highlight selected box
+      if (mode === selectedBoxKey) {
+        ctx.lineWidth = 3;
+        ctx.setLineDash([6,3]);
+      } else {
+        ctx.lineWidth = 2;
+        ctx.setLineDash([]);
+      }
+      
+      const colorMap = {
+          'vehicle': { stroke: '#16a34a', fill: 'rgba(22, 163, 74, 0.2)' },
+          'plate': { stroke: '#f97316', fill: 'rgba(249, 115, 22, 0.2)' },
+          'face': { stroke: '#ef4444', fill: 'rgba(239, 68, 68, 0.2)' },
+          'body': { stroke: '#3b82f6', fill: 'rgba(59, 130, 246, 0.2)' }
+      };
+      
+      const colors = colorMap[mode] || colorMap['face'];
+      ctx.strokeStyle = colors.stroke;
+      ctx.rect(x, y, w, h);
+      ctx.stroke();
+      
+      ctx.fillStyle = colors.fill;
+      ctx.fill();
+      
+        // Draw resize handles if not while dragging
+        if (!isDrag) {
+          const handleSize = 6;
+          const half = handleSize / 2;
+          // corners: tl, tr, bl, br
+          const corners = [ [x, y], [x + w, y], [x, y + h], [x + w, y + h] ];
+          ctx.fillStyle = colors.stroke;
+          corners.forEach(c => {
+            ctx.fillRect(Math.round(c[0] - half), Math.round(c[1] - half), handleSize, handleSize);
+          });
+        }
+      // reset dash
+      ctx.setLineDash([]);
+  }
+
+  function setDrawMode(mode) {
+      currentMode = mode;
+      
+      const btnMap = {
+          'vehicle': { id: 'btnDrawVehicle', color: 'success' },
+          'plate': { id: 'btnDrawPlate', color: 'warning' },
+          'face': { id: 'btnDrawFace', color: 'danger' },
+          'body': { id: 'btnDrawBody', color: 'primary' }
+      };
+      
+      ['vehicle', 'plate', 'face', 'body'].forEach(m => {
+          const btn = document.getElementById(btnMap[m].id);
+          const isActive = m === mode;
+          btn.classList.remove('btn-outline-success', 'btn-outline-warning', 'btn-outline-danger', 'btn-outline-primary', 'btn-outline-secondary', 'active');
+          btn.classList.add(isActive ? `btn-outline-${btnMap[m].color}` : 'btn-outline-secondary');
+          if (isActive) btn.classList.add('active');
+      });
+  }
+
+  function clearCanvas() {
+      boxes = { vehicle: null, plate: null, face: null, body: null };
+      redrawCanvas();
+  }
+
+    function openEditIdentityModal(obsId) {
+      // If obsId provided, prefer that container; otherwise use first observation container
+      const container = obsId ? document.querySelector(`#obs-img-container-${obsId}`) : document.querySelector('.img-container');
+      let imgUrl = null;
+        if (container) {
+          try {
+              const faceBoxData = container.dataset.faceBox;
+              const bodyBoxData = container.dataset.bodyBox;
+              const vehicleBoxData = container.dataset.vehicleBox;
+              const plateBoxData = container.dataset.plateBox;
+            const frameSrc = container.dataset.frameSrc;
+              
+              boxes.face = (faceBoxData && faceBoxData !== 'null') ? JSON.parse(faceBoxData) : null;
+              boxes.body = (bodyBoxData && bodyBoxData !== 'null') ? JSON.parse(bodyBoxData) : null;
+              boxes.vehicle = (vehicleBoxData && vehicleBoxData !== 'null') ? JSON.parse(vehicleBoxData) : null;
+              boxes.plate = (plateBoxData && plateBoxData !== 'null') ? JSON.parse(plateBoxData) : null;
+
+            // Prefer explicit original frame source stored on container
+            if (frameSrc && frameSrc !== '#') {
+              imgUrl = frameSrc;
+            }
+          } catch (e) {
+              console.warn('Failed to load existing boxes:', e);
+          }
+      }
+      
+        // If still no frame source, fallback to first timeline image
+        if (!imgUrl) {
+          const timelineImages = document.querySelectorAll('.timeline-item img.vehicle-img');
+          if (timelineImages.length > 0) imgUrl = timelineImages[0].src;
+        }
+
+        if (!imgUrl) {
+          Swal.fire('Error', 'Original frame not available for this observation', 'error');
+          return;
+        }
+
+        new bootstrap.Modal(document.getElementById('editIdentityModal')).show();
+        // Initialize canvas with original full-frame image (not crop)
+        setTimeout(() => initCanvas(imgUrl), 300);
+  }
+
+  function submitEditIdentity() {
+      const form = document.getElementById('editIdentityForm');
+      
+      // Ensure old boxes are preserved when admin only edits text: if boxes are empty, try to load from first observation container
+      if (!boxes.vehicle && !boxes.plate && !boxes.face && !boxes.body) {
+        const container = document.querySelector('.img-container');
+        if (container) {
+          try {
+            const vb = container.dataset.vehicleBox || null;
+            const pb = container.dataset.plateBox || null;
+            const fb = container.dataset.faceBox || null;
+            const bb = container.dataset.bodyBox || null;
+            boxes.vehicle = vb && vb !== 'null' ? JSON.parse(vb) : null;
+            boxes.plate = pb && pb !== 'null' ? JSON.parse(pb) : null;
+            boxes.face = fb && fb !== 'null' ? JSON.parse(fb) : null;
+            boxes.body = bb && bb !== 'null' ? JSON.parse(bb) : null;
+          } catch (e) { /* ignore */ }
+        }
+      }
+
+      if (boxes.vehicle) document.getElementById('vehicleBoxInput').value = JSON.stringify(boxes.vehicle);
+      if (boxes.plate) document.getElementById('plateBoxInput').value = JSON.stringify(boxes.plate);
+      if (boxes.face) document.getElementById('faceBoxInput').value = JSON.stringify(boxes.face);
+      if (boxes.body) document.getElementById('bodyBoxInput').value = JSON.stringify(boxes.body);
+
+      const formData = new FormData(form);
+      const data = Object.fromEntries(formData.entries());
+      const id = data.id;
+      
+      if (data.vehicle_box) data.vehicle_box = JSON.parse(data.vehicle_box);
+      if (data.plate_box) data.plate_box = JSON.parse(data.plate_box);
+      if (data.face_box) data.face_box = JSON.parse(data.face_box);
+      if (data.body_box) data.body_box = JSON.parse(data.body_box);
+      
+      const modalEl = document.getElementById('editIdentityModal');
+      bootstrap.Modal.getInstance(modalEl).hide();
+      
+      Swal.fire({
+          title: 'Menyimpan...',
+          text: 'Memperbarui identitas dan menyimpan override dataset verifikasi...',
+          allowOutsideClick: false,
+          didOpen: () => {
+              Swal.showLoading();
+          }
+      });
+      
+      fetch(`/api/identities/${id}/details`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+      })
+      .then(r => r.json())
+      .then(resp => {
+          if (resp.success) {
+              Swal.fire({
+                  icon: 'success',
+                  title: 'Anotasi Disimpan!',
+                  text: 'Visualisasi dan dataset telah diperbarui.',
+                  timer: 1500,
+                  showConfirmButton: false
+              });
+
+              updateVerificationStatus(true);
+              
+              // 🔧 UPDATE SIDEBAR DATA
+              if (resp.updated_data) {
+                  const ud = resp.updated_data;
+                  
+                  if (ud.plate_text) {
+                      document.getElementById('identity-plate').innerHTML = 
+                          `${ud.plate_text} <span class="badge bg-info text-white ms-1"><i class="fas fa-check-double"></i> Terverifikasi</span>`;
+                  }
+                  
+                  if (ud.driver_name) {
+                      document.getElementById('identity-driver-name').textContent = ud.driver_name;
+                  }
+                  
+                  if (ud.driver_id_card) {
+                      document.getElementById('identity-driver-id').textContent = ud.driver_id_card;
+                  }
+                  
+                  if (ud.driver_face_status) {
+                      const statusMap = {
+                          'verified': '<span class="badge bg-success" style="cursor: pointer;" onclick="showDriverFace()">Terverifikasi <i class="fas fa-eye ms-1"></i></span>',
+                          'unverified': '<span class="badge bg-warning text-dark">Belum Terverifikasi</span>',
+                          'not_available': '<span class="badge bg-secondary">Tidak Tersedia</span>'
+                      };
+                      document.getElementById('identity-face-status').innerHTML = statusMap[ud.driver_face_status] || statusMap['not_available'];
+                  }
+              }
+              
+              // 🔧 UPDATE ALL OBSERVATION CONTAINERS WITH ALL BOX TYPES
+              const containers = document.querySelectorAll('.img-container');
+              if (containers.length > 0) {
+                  containers.forEach(container => {
+                      container.dataset.isManual = 'true';
+                      container.dataset.vehicleBox = JSON.stringify(resp.annotations.vehicle_box || null);
+                      container.dataset.plateBox = JSON.stringify(resp.annotations.plate_box || null);
+                      container.dataset.faceBox = JSON.stringify(resp.annotations.face_box || null);
+                      container.dataset.bodyBox = JSON.stringify(resp.annotations.body_box || null);
+                      
+                      // 🔧 CRITICAL: Update image to burned version if available
+                      const img = container.querySelector('img');
+                      if (img && resp.image_url) {
+                          // Force reload with burned image
+                          img.onload = function() {
+                              // After image loads, DON'T redraw boxes - they're already burned in
+                              // Just ensure data attributes are set for future reference
+                          };
+                          img.src = resp.image_url + '?t=' + Date.now(); // Cache bust
+                      }
+                  });
+              } else {
+                  setTimeout(() => location.reload(), 1000);
+              }
+
+          } else {
+              Swal.fire('Error', resp.error || 'Gagal menyimpan', 'error');
+          }
+      })
+      .catch(e => {
+          Swal.fire('Error', 'API Connection Error', 'error');
+      });
+  }
+
+  function redrawBoundingBoxes(container) {
+      if (!container) return;
+      
+      const img = container.querySelector('img');
+      const overlay = container.querySelector('.box-overlay');
+      
+      if (!img || !overlay) return;
+      
+      overlay.innerHTML = '';
+      
+      // 🔧 FIX: Don't redraw if image is already burned (has boxes permanently drawn)
+      // Check if image src contains 'burned_' or 'annotated_frames'
+      if (img.src.includes('burned_') || img.src.includes('annotated_frames')) {
+          console.log('Skipping box redraw - image already has burned annotations');
+          return;
+      }
+      
+      const isManual = container.dataset.isManual === 'true';
+      const faceBox = JSON.parse(container.dataset.faceBox || 'null');
+      const bodyBox = JSON.parse(container.dataset.bodyBox || 'null');
+      const vehicleBox = JSON.parse(container.dataset.vehicleBox || 'null');
+      const plateBox = JSON.parse(container.dataset.plateBox || 'null');
+      
+      if (!isManual) return;
+      
+      const naturalWidth = img.naturalWidth;
+      const naturalHeight = img.naturalHeight;
+      
+      if (naturalWidth === 0 || naturalHeight === 0) return;
+      
+      function createBox(box, color, label) {
+          if (!box || box.length < 4) return;
+          
+          const [x, y, w, h] = box;
+          const left = (x / naturalWidth) * 100;
+          const top = (y / naturalHeight) * 100;
+          const width = (w / naturalWidth) * 100;
+          const height = (h / naturalHeight) * 100;
+          
+          const div = document.createElement('div');
+          div.style.position = 'absolute';
+          div.style.left = `${left}%`;
+          div.style.top = `${top}%`;
+          div.style.width = `${width}%`;
+          div.style.height = `${height}%`;
+          div.style.border = `2px solid ${color}`;
+          div.style.backgroundColor = color.replace(')', ', 0.1)').replace('rgb', 'rgba');
+          div.style.pointerEvents = 'none';
+          div.title = label;
+          
+          return div;
+      }
+      
+      const verifiedColor = '#00ff00';
+      
+      if (vehicleBox) {
+          const boxEl = createBox(vehicleBox, '#16a34a', 'Kendaraan');
+          if(boxEl) overlay.appendChild(boxEl);
+      }
+      
+      if (plateBox) {
+          const boxEl = createBox(plateBox, '#f97316', 'Plat Nomor');
+          if(boxEl) overlay.appendChild(boxEl);
+      }
+      
+      if (bodyBox) {
+          const boxEl = createBox(bodyBox, '#3b82f6', 'Badan');
+          if(boxEl) overlay.appendChild(boxEl);
+      }
+      
+      if (faceBox) {
+          const boxEl = createBox(faceBox, verifiedColor, 'Wajah (Verifikasi)');
+          if(boxEl) overlay.appendChild(boxEl);
+      }
+  }
+
+  function showDriverFace() {
+      const container = document.querySelector('.img-container');
+      if (!container) {
+          Swal.fire('Info', 'Tidak ada gambar tersedia', 'info');
+          return;
+      }
+      
+      const img = container.querySelector('img');
+      const boxData = container.dataset.faceBox;
+      
+      if (!img || !boxData || boxData === 'null' || boxData === '[]') {
+          Swal.fire('Info', 'Data lokasi wajah tidak tersedia', 'info');
+          return;
+      }
+      
+      try {
+          const box = JSON.parse(boxData);
+          if (box.length < 4) throw new Error("Invalid Box");
+          
+          const [x, y, w, h] = box;
+          const canvas = document.getElementById('driverFaceCanvas');
+          const ctx = canvas.getContext('2d');
+          
+          canvas.width = w;
+          canvas.height = h;
+          
+          if (img.naturalWidth === 0) {
+              Swal.fire('Info', 'Gambar belum dimuat sepenuhnya. Coba lagi.', 'info');
+              return;
+          }
+          
+          ctx.drawImage(img, x, y, w, h, 0, 0, w, h);
+          
+          document.getElementById('driverFaceStatusText').textContent = 'Crop Wajah (Terverifikasi)';
+          
+          new bootstrap.Modal(document.getElementById('driverFaceModal')).show();
+          
+      } catch (e) {
+          console.error(e);
+          Swal.fire('Error', 'Gagal memproses gambar wajah', 'error');
+      }
+  }
+
+  function showDriverCrop(obsId) {
+      const container = document.querySelector(`#obs-img-container-${obsId}`);
+      if (!container) {
+          Swal.fire('Error', 'Container observasi tidak ditemukan', 'error');
+          return;
+      }
+      
+      const img = container.querySelector('img');
+      if (!img) {
+          Swal.fire('Error', 'Gambar tidak ditemukan', 'error');
+          return;
+      }
+      
+      // Parse box data
+      let faceBox = null;
+      let bodyBox = null;
+      
+      try {
+          const faceBoxData = container.dataset.faceBox;
+          const bodyBoxData = container.dataset.bodyBox;
+          
+          if (faceBoxData && faceBoxData !== 'null') {
+              faceBox = JSON.parse(faceBoxData);
+          }
+          if (bodyBoxData && bodyBoxData !== 'null') {
+              bodyBox = JSON.parse(bodyBoxData);
+          }
+      } catch (e) {
+          console.error('Error parsing box data:', e);
+      }
+      
+      if (!faceBox && !bodyBox) {
+          Swal.fire('Info', 'Data koordinat pengemudi tidak tersedia', 'info');
+          return;
+      }
+      
+        // Prefer pre-generated face/body crops in results/annotated_frames
+        const faceUrl = `/results/annotated_frames/face_crop_${obsId}.jpg?t=${IMAGE_TS}`;
+        const bodyUrl = `/results/annotated_frames/body_crop_${obsId}.jpg?t=${IMAGE_TS}`;
+
+        const faceImg = new Image();
+        faceImg.crossOrigin = 'anonymous';
+        faceImg.onload = function() {
+          drawCropToCanvas('faceCropCanvas', faceImg);
+          document.getElementById('faceCropStatus').textContent = 'Pengemudi (Terverifikasi)';
+        };
+        faceImg.onerror = function() {
+          // Fallback: if server-side crop not available, try client-side crop if coordinates exist
+          if (faceBox && faceBox.length === 4 && img && img.naturalWidth > 0) {
+            cropAndShowDriver(img, faceBox, bodyBox);
+            return;
+          }
+          document.getElementById('faceCropStatus').textContent = 'Tidak ada data wajah';
+        };
+        faceImg.src = faceUrl;
+
+        const bodyImg = new Image();
+        bodyImg.crossOrigin = 'anonymous';
+        bodyImg.onload = function() {
+          drawCropToCanvas('bodyCropCanvas', bodyImg);
+          document.getElementById('bodyCropStatus').textContent = 'Badan Pengemudi (Terverifikasi)';
+        };
+        bodyImg.onerror = function() {
+          // If server-side body unavailable, let cropAndShowDriver handle client-side fallback when invoked
+          if (!faceBox || faceBox.length !== 4) {
+            document.getElementById('bodyCropStatus').textContent = 'Tidak ada data badan';
+          }
+        };
+        bodyImg.src = bodyUrl;
+
+        // Finally show modal
+        const modal = new bootstrap.Modal(document.getElementById('driverCropModal'));
+        modal.show();
+  }
+
+  function cropAndShowDriver(img, faceBox, bodyBox) {
+      // If server-side crops not available we fall back here; this function expects img and box coords
+      // Draw helper
+      function safeDraw(canvasId, sx, sy, sw, sh) {
+        const c = document.getElementById(canvasId);
+        if (!c) return;
+        const ctx = c.getContext('2d');
+        c.width = sw;
+        c.height = sh;
+        try { ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh); } catch (e) { console.error('Error safeDraw', e); }
+      }
+
+      if (faceBox && faceBox.length === 4) {
+        const [x, y, w, h] = faceBox;
+        safeDraw('faceCropCanvas', x, y, w, h);
+        document.getElementById('faceCropStatus').textContent = 'Pengemudi (Terverifikasi)';
+      } else {
+        document.getElementById('faceCropStatus').textContent = 'Tidak ada data wajah';
+      }
+
+      if (bodyBox && bodyBox.length === 4) {
+        const [x, y, w, h] = bodyBox;
+        safeDraw('bodyCropCanvas', x, y, w, h);
+        document.getElementById('bodyCropStatus').textContent = 'Badan Pengemudi (Terverifikasi)';
+      } else {
+        document.getElementById('bodyCropStatus').textContent = 'Tidak ada data badan';
+      }
+
+      // Show modal
+      const modal = new bootstrap.Modal(document.getElementById('driverCropModal'));
+      modal.show();
+  }
+
+    function drawCropToCanvas(canvasId, imageObj) {
+      const c = document.getElementById(canvasId);
+      if (!c) return;
+      // Keep 1:1 aspect and fit width
+      c.width = imageObj.naturalWidth;
+      c.height = imageObj.naturalHeight;
+      const ctx = c.getContext('2d');
+      try { ctx.clearRect(0,0,c.width,c.height); ctx.drawImage(imageObj, 0, 0); } catch (e) { console.error('drawCropToCanvas', e); }
+    }
+
+  // 🔧 SYNC ON LOAD
+  document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('.img-container').forEach(c => redrawBoundingBoxes(c));
+      syncIdentityFromObservations();
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,315 @@
+{% extends 'base.html' %} {% block title %}Dasbor - Sistem Identitas Kendaraan{%
+endblock %} {% block page_title %}Dasbor{% endblock %} {% block content %}
+<!-- Statistics Cards -->
+<div class="row mb-4">
+  <div class="col-md-3">
+    <div class="card stat-card">
+      <div class="card-body d-flex align-items-center">
+        <div class="icon-box bg-primary bg-opacity-10 text-primary me-3">
+          <i class="fas fa-car"></i>
+        </div>
+        <div>
+          <h6 class="text-muted mb-1">Total Identitas</h6>
+          <h3 class="mb-0">{{ total_vehicles }}</h3>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card stat-card">
+      <div class="card-body d-flex align-items-center">
+        <div class="icon-box bg-success bg-opacity-10 text-success me-3">
+          <i class="fas fa-check-circle"></i>
+        </div>
+        <div>
+          <h6 class="text-muted mb-1">Total Observasi</h6>
+          <h3 class="mb-0">{{ total_observations }}</h3>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card stat-card">
+      <div class="card-body d-flex align-items-center">
+        <div class="icon-box bg-warning bg-opacity-10 text-warning me-3">
+          <i class="fas fa-exclamation-triangle"></i>
+        </div>
+        <div>
+          <h6 class="text-muted mb-1">Aktivitas Hari Ini</h6>
+          <h3 class="mb-0">{{ activity_today or 0 }}</h3>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card stat-card">
+      <div class="card-body d-flex align-items-center">
+        <div class="icon-box bg-info bg-opacity-10 text-info me-3">
+          <i class="fas fa-eye"></i>
+        </div>
+        <div>
+          <h6 class="text-muted mb-1">Status Sistem</h6>
+          <h3 class="mb-0">Online</h3>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <!-- Recent Observations -->
+  <div class="col-md-8">
+    <div class="card">
+      <div
+        class="card-header bg-white d-flex justify-content-between align-items-center"
+      >
+        <h6 class="mb-0">Observasi Terkini</h6>
+        <a
+          href="{{ url_for('admin.observations_list') }}"
+          class="btn btn-sm btn-outline-primary"
+          >Lihat Semua</a
+        >
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-hover">
+            <thead>
+              <tr>
+                <th>Waktu</th>
+                <th>Plat</th>
+                <th>Jenis</th>
+                <th>Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for obs in recent_observations %}
+              <tr>
+                <td>
+                  {{ obs.timestamp.strftime('%d/%m %H:%M') if obs.timestamp else
+                  '-' }}
+                </td>
+                <td>
+                  {% if obs.identity %}
+                  <strong>{{ obs.identity.plate_text or '?' }}</strong>
+                  {% if obs.identity.is_manually_annotated %}
+                  <i
+                    class="fas fa-check-circle text-info ms-1"
+                    title="Diverifikasi Manual"
+                  ></i>
+                  {% endif %} {% else %}
+                  <span class="badge badge-ocr-failed">Tidak Ada Plat</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <span class="badge bg-secondary"
+                    >{{ obs.vehicle_type or 'Tidak Diketahui' }}</span
+                  >
+                </td>
+                <td>
+                  <span class="badge bg-success">Terdeteksi</span>
+                </td>
+                <td>
+                  <a
+                    href="{{ url_for('admin.vehicle_detail', id=obs.vehicle_id) }}"
+                    class="btn btn-sm btn-outline-primary"
+                  >
+                    <i class="fas fa-eye"></i>
+                  </a>
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="6" class="text-center text-muted">
+                  Belum ada observasi
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="col-md-4">
+    <!-- Identity Method Chart -->
+    <div class="card mb-4" style="display: none">
+      <div class="card-header bg-white">
+        <h6 class="mb-0">Metode Identifikasi</h6>
+      </div>
+      <div class="card-body">
+        <canvas id="methodChart" height="200"></canvas>
+      </div>
+    </div>
+
+    <!-- Vehicle Type Chart -->
+    <div class="card">
+      <div class="card-header bg-white">
+        <h6 class="mb-0">Jenis Kendaraan</h6>
+      </div>
+      <div class="card-body">
+        <canvas id="typeChart" height="200"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="row mt-4">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header bg-white">
+        <h6 class="mb-0">Aksi Cepat</h6>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-3">
+            <a
+              href="{{ url_for('api.upload_image_ui') }}"
+              class="btn btn-primary w-100"
+            >
+              <i class="fas fa-upload me-2"></i> Unggah Gambar
+            </a>
+          </div>
+          <div class="col-md-3">
+            <a
+              href="{{ url_for('api.video_ui') }}?source=webcam"
+              class="btn btn-success w-100"
+            >
+              <i class="fas fa-video me-2"></i> Mulai Webcam
+            </a>
+          </div>
+          <div class="col-md-3">
+            <a
+              href="{{ url_for('admin.vehicles_list') }}?status=unverified"
+              class="btn btn-warning w-100"
+            >
+              <i class="fas fa-tasks me-2"></i> Tinjau Belum Verifikasi
+            </a>
+          </div>
+          <div class="col-md-3">
+            <a
+              href="{{ url_for('admin.merge_page') }}"
+              class="btn btn-info w-100"
+            >
+              <i class="fas fa-code-branch me-2"></i> Gabung/Pisah
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block extra_js %}
+<script>
+  // Chart formatting and colors
+  const chartColors = {
+      blue: '#3b82f6',
+      purple: '#8b5cf6',
+      gray: '#6b7280',
+      red: '#ef4444',
+      green: '#10b981',
+      yellow: '#f59e0b',
+      indigo: '#6366f1',
+      pink: '#ec4899'
+  };
+
+  // Vehicle Type Chart
+  const typeResults = [
+      {% for t, c in type_stats or [] %}
+      { type: '{{ t or "Unknown" }}', count: {{ c }} },
+      {% endfor %}
+  ];
+
+  const typeColorMap = {
+      'car': chartColors.blue,
+      'motorcycle': chartColors.red,
+      'bus': chartColors.yellow,
+      'truck': chartColors.green,
+      'person': chartColors.gray,
+      'unknown': chartColors.gray
+  };
+
+  const typeLabelMap = {
+      'car': 'Mobil',
+      'motorcycle': 'Motor',
+      'bus': 'Bus',
+      'truck': 'Truk',
+      'person': 'Orang',
+      'unknown': 'Tidak Diketahui'
+  };
+
+  const typeLabels = typeResults.map(i => typeLabelMap[i.type.toLowerCase()] || i.type);
+  const typeData = typeResults.map(i => i.count);
+  const typeBgColors = typeResults.map(i => typeColorMap[i.type.toLowerCase()] || chartColors.indigo);
+
+  // Multi-line Chart Data
+  const chartLabels = {{ chart_labels | tojson }};
+  const rawDatasets = {{ chart_datasets | tojson }};
+
+  const lineDatasets = [
+      {
+          label: 'Mobil',
+          data: rawDatasets.car,
+          borderColor: chartColors.blue,
+          backgroundColor: chartColors.blue,
+          tension: 0.4
+      },
+      {
+          label: 'Motor',
+          data: rawDatasets.motorcycle,
+          borderColor: chartColors.red,
+          backgroundColor: chartColors.red,
+          tension: 0.4
+      },
+      {
+          label: 'Bus',
+          data: rawDatasets.bus,
+          borderColor: chartColors.yellow,
+          backgroundColor: chartColors.yellow,
+          tension: 0.4
+      },
+      {
+          label: 'Truk',
+          data: rawDatasets.truck,
+          borderColor: chartColors.green,
+          backgroundColor: chartColors.green,
+          tension: 0.4
+      }
+  ];
+
+  const typeCtx = document.getElementById('typeChart').getContext('2d');
+  new Chart(typeCtx, {
+      type: 'line',
+      data: {
+          labels: chartLabels,
+          datasets: lineDatasets
+      },
+      options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+              mode: 'index',
+              intersect: false,
+          },
+          plugins: {
+              legend: {
+                  position: 'bottom'
+              },
+              tooltip: {
+                  mode: 'index',
+                  intersect: false
+              }
+          },
+          scales: {
+              y: {
+                  beginAtZero: true,
+                  ticks: { precision: 0 }
+              }
+          }
+      }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Live Detection - Vehicle Identity System</title>
+
+    <!-- Bootstrap 5 -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <!-- Font Awesome -->
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+      rel="stylesheet"
+    />
+
+    <style>
+      :root {
+        --primary-gradient: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+      }
+
+      body {
+        background: #1e293b;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        min-height: 100vh;
+      }
+
+      .navbar {
+        background: var(--primary-gradient) !important;
+      }
+
+      .video-container {
+        background: #0f172a;
+        border-radius: 16px;
+        padding: 20px;
+        margin-top: 20px;
+      }
+
+      .video-frame {
+        width: 100%;
+        max-width: 1280px;
+        border-radius: 12px;
+        border: 3px solid #3b82f6;
+      }
+
+      .status-badge {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        z-index: 10;
+      }
+
+      .controls-panel {
+        background: #0f172a;
+        border-radius: 16px;
+        padding: 20px;
+        margin-top: 20px;
+      }
+
+      .stat-item {
+        text-align: center;
+        padding: 15px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 12px;
+      }
+
+      .stat-item h3 {
+        color: #3b82f6;
+        margin-bottom: 5px;
+      }
+
+      .stat-item small {
+        color: #94a3b8;
+      }
+      
+      .delta-badge {
+          font-size: 0.75rem;
+          padding: 2px 6px;
+          border-radius: 4px;
+          margin-left: 5px;
+      }
+      .delta-positive {
+          background-color: rgba(16, 185, 129, 0.2);
+          color: #10b981;
+      }
+      
+      .mirror-active {
+          transform: scaleX(-1);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark">
+      <div class="container">
+        <a class="navbar-brand" href="/">
+          <i class="fas fa-car-side me-2"></i>
+          Vehicle Identity System
+        </a>
+        <div class="navbar-nav ms-auto">
+          <a class="nav-link" href="/"> <i class="fas fa-home"></i> Home </a>
+          <a class="nav-link" href="{{ url_for('admin.dashboard') }}">
+            <i class="fas fa-cogs"></i> Admin
+          </a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="container py-4">
+      <div class="row">
+        <div class="col-12">
+          <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+              <h2 class="text-white mb-1">
+                <i class="fas fa-video text-primary"></i> Live Detection
+              </h2>
+              <!-- Source Controls -->
+              <div class="text-secondary mb-0 mt-2">
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                  <label class="form-label text-secondary mb-0 me-2">Source:</label>
+                  <select id="sourceType" class="form-select form-select-sm w-auto" onchange="toggleSourceInputs()">
+                    <option value="webcam" {% if source == 'webcam' %}selected{% endif %}>Webcam / Device (Server)</option>
+                    <option value="client" {% if source == 'client' %}selected{% endif %}>Webcam (Client)</option>
+                    <option value="ipcam" {% if source != 'webcam' and source != 'client' %}selected{% endif %}>IP Camera / RTSP</option>
+                  </select>
+                  
+                  <input id="deviceIndex" type="number" class="form-control form-control-sm" style="width: 70px; display:none" value="0" min="0" placeholder="ID">
+                  <input id="sourceUrl" type="text" class="form-control form-control-sm" style="width: 250px; display:none" placeholder="rtsp://... or http://..." value="{{ url }}">
+                  
+                  <button id="applySource" class="btn btn-sm btn-primary" onclick="applySource()">
+                      <i class="fas fa-play"></i> Apply
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-light" onclick="toggleMirror()" title="Mirror View">
+                    <i class="fas fa-arrows-alt-h" id="mirrorIcon"></i>
+                </button>
+                <button class="btn btn-outline-light" onclick="togglePause()" title="Pause/Resume">
+                    <i class="fas fa-pause" id="pauseIcon"></i>
+                </button>
+              <a href="/" class="btn btn-outline-light">
+                <i class="fas fa-stop"></i> Exit
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <!-- Video Stream -->
+        <div class="col-lg-9">
+          <div class="video-container position-relative text-center" style="min-height: 480px;">
+            <span class="badge bg-danger status-badge" id="liveBadge">
+              <i class="fas fa-circle"></i> LIVE
+            </span>
+
+            {% if source == 'webcam' %}
+            <img
+              src="{{ url_for('api.webcam_feed') }}"
+              class="video-frame"
+              alt="Webcam Feed"
+              id="videoFeed"
+            />
+            {% elif source == 'client' %}
+            <!-- Client Camera Elements -->
+            <video id="clientVideo" autoplay playsinline style="display:none;"></video>
+            <canvas id="clientCanvas" style="display:none;"></canvas>
+            <img
+              src=""
+              class="video-frame"
+              alt="Client Cam Feed"
+              id="videoFeed"
+            />
+            {% else %}
+            <img
+              src="{{ url_for('api.ipcam_feed', url=url) }}"
+              class="video-frame"
+              alt="IP Camera Feed"
+              id="videoFeed"
+            />
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-lg-3">
+          <div class="controls-panel">
+            <h5 class="text-white mb-4">
+              <i class="fas fa-chart-line"></i> Quick State
+            </h5>
+
+            <!-- Quick Stats -->
+            <div class="row g-2 mb-4">
+              <div class="col-6">
+                <div class="stat-item">
+                  <h3 id="identityCount">-</h3>
+                  <div class="small fw-bold text-white">Identities</div>
+                  <div id="identityDelta" class="delta-badge" style="display:none">+0 new</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="stat-item">
+                  <h3 id="observationCount">-</h3>
+                  <div class="small fw-bold text-white">Observations</div>
+                  <div id="observationDelta" class="delta-badge" style="display:none">+0 new</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="d-grid gap-2">
+              <a
+                href="{{ url_for('admin.vehicles_list') }}?status=unverified"
+                class="btn btn-warning"
+                target="_blank"
+              >
+                <i class="fas fa-tasks"></i> Review Unverified
+              </a>
+              <a
+                href="{{ url_for('admin.dashboard') }}"
+                class="btn btn-outline-light"
+                target="_blank"
+              >
+                <i class="fas fa-th-large"></i> Open Dashboard
+              </a>
+            </div>
+          </div>
+
+          <!-- Connection Status -->
+          <div class="controls-panel mt-3">
+            <h6 class="text-white mb-3">
+              <i class="fas fa-network-wired"></i> Connection Monitor
+            </h6>
+            
+            <div class="mb-3">
+                <label class="form-label text-secondary small">FPS Limit</label>
+                <div class="d-flex align-items-center gap-2">
+                    <input type="range" class="form-range" id="fpsRange" min="1" max="30" value="0" onchange="updateFpsLimit(this.value)">
+                    <span class="badge bg-secondary" id="fpsValue">Max</span>
+                </div>
+            </div>
+            
+            <hr class="border-secondary">
+            
+            <div class="d-flex justify-content-between mb-2">
+                <span class="text-secondary small">Status</span>
+                <span class="badge bg-success" id="connectionStatus">Connected</span>
+            </div>
+            <div class="d-flex justify-content-between mb-2">
+                <span class="text-secondary small">Server FPS</span>
+                <span class="text-white fw-bold"><span id="serverFps">-</span> fps</span>
+            </div>
+            <div class="d-flex justify-content-between">
+                <span class="text-secondary small">Latency</span>
+                <span class="text-white fw-bold"><span id="serverLatency">-</span> ms</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Live Detection Table -->
+      <div class="row mt-4">
+          <div class="col-12">
+            <div class="controls-panel mt-0">
+                <h5 class="text-white mb-3">
+                  <i class="fas fa-list-alt"></i> Live Scrape Data
+                </h5>
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Snapshot</th>
+                                <th>Timestamp</th>
+                                <th>Plate Number</th>
+                                <th>Type</th>
+                                <th>Confidence</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="liveTableBody">
+                            <tr>
+                                <td colspan="5" class="text-center text-muted">Waiting for data...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+          </div>
+      </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+      let currentFpsLimit = 0; // 0 = Max
+      let initialStats = null;
+      let isPaused = false;
+      let lastObsId = 0;
+      
+      // Client Camera Variables
+      const isClientSource = "{{ source }}" === 'client';
+      let clientVideo = null;
+      let clientCanvas = null;
+      let clientCtx = null;
+      let clientStream = null;
+      let isProcessingFrame = false;
+
+      // Init inputs
+      function toggleSourceInputs() {
+          const type = document.getElementById('sourceType').value;
+          document.getElementById('deviceIndex').style.display = type === 'webcam' ? 'block' : 'none';
+          document.getElementById('sourceUrl').style.display = type === 'ipcam' ? 'block' : 'none';
+      }
+      
+      // Call once
+      toggleSourceInputs();
+
+      // Apply Source Change
+      function applySource() {
+          const type = document.getElementById('sourceType').value;
+          
+          if (type === 'webcam') {
+              const dev = document.getElementById('deviceIndex').value;
+              window.location.href = `/video_ui?source=webcam&device=${dev}`;
+          } else if (type === 'client') {
+              window.location.href = `/video_ui?source=client`;
+          } else {
+              const url = document.getElementById('sourceUrl').value;
+              if (url) {
+                  window.location.href = `/video_ui?source=ipcam&url=${encodeURIComponent(url)}`;
+              }
+          }
+      }
+
+      // Update FPS Limit
+      function updateFpsLimit(val) {
+          currentFpsLimit = val;
+          document.getElementById('fpsValue').textContent = val == 0 || val == 30 ? 'Max' : val;
+          if (!isClientSource) {
+             reloadStream();
+          }
+      }
+      
+      // Reload stream with new FPS param
+      function reloadStream() {
+          if (isClientSource) return; // Client cam managed by loop delay
+          const img = document.getElementById('videoFeed');
+          const currentSrc = new URL(img.src);
+          if (currentFpsLimit > 0 && currentFpsLimit < 30) {
+              currentSrc.searchParams.set('fps', currentFpsLimit);
+          } else {
+              currentSrc.searchParams.delete('fps');
+          }
+          img.src = currentSrc.toString();
+      }
+      
+      function togglePause() {
+          isPaused = !isPaused;
+          const img = document.getElementById('videoFeed');
+          const badge = document.getElementById('liveBadge');
+          const btnIcon = document.getElementById('pauseIcon');
+          
+          if (isPaused) {
+              // Stop updating image
+              if (!isClientSource) img.src = "";
+              badge.className = "badge bg-warning status-badge";
+              badge.innerHTML = "<i class='fas fa-pause'></i> PAUSED";
+              btnIcon.className = "fas fa-play";
+          } else {
+              if (!isClientSource) reloadStream();
+              badge.className = "badge bg-danger status-badge";
+              badge.innerHTML = "<i class='fas fa-circle'></i> LIVE";
+              btnIcon.className = "fas fa-pause";
+          }
+      }
+
+      function toggleMirror() {
+          const img = document.getElementById('videoFeed');
+          const icon = document.getElementById('mirrorIcon');
+          
+          if (img.classList.contains('mirror-active')) {
+              img.classList.remove('mirror-active');
+              icon.className = 'fas fa-arrows-alt-h';
+              icon.parentElement.classList.remove('active');
+          } else {
+              img.classList.add('mirror-active');
+              icon.className = 'fas fa-arrows-alt-h text-primary';
+              icon.parentElement.classList.add('active');
+          }
+      }
+      
+      // --- Client Camera Logic ---
+      async function startClientCamera() {
+          if (!isClientSource) return;
+          
+          console.log("Starting Client Camera...");
+          clientVideo = document.getElementById('clientVideo');
+          clientCanvas = document.getElementById('clientCanvas');
+          clientCtx = clientCanvas.getContext('2d');
+          
+          try {
+              const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } } });
+              clientVideo.srcObject = stream;
+              clientStream = stream;
+              
+              document.getElementById("connectionStatus").textContent = "Local Cam Active";
+              document.getElementById("connectionStatus").className = "badge bg-success";
+              
+              // Start processing loop
+              requestAnimationFrame(processClientFrame);
+              
+          } catch (err) {
+              console.error("Camera access error:", err);
+              document.getElementById("connectionStatus").textContent = "Cam Access Denied";
+              document.getElementById("connectionStatus").className = "badge bg-danger";
+              alert("Could not access camera: " + err.message);
+          }
+      }
+      
+      async function processClientFrame() {
+          if (isPaused) {
+              requestAnimationFrame(processClientFrame);
+              return;
+          }
+          
+          if (clientVideo.readyState === clientVideo.HAVE_ENOUGH_DATA && !isProcessingFrame) {
+             isProcessingFrame = true;
+             
+             // Draw video to canvas
+             clientCanvas.width = clientVideo.videoWidth;
+             clientCanvas.height = clientVideo.videoHeight;
+             clientCtx.drawImage(clientVideo, 0, 0);
+             
+             // Get Base64
+             const imageData = clientCanvas.toDataURL('image/jpeg', 0.8);
+             
+             const startTime = Date.now();
+             
+             try {
+                 const response = await fetch('/api/process_frame_client', {
+                     method: 'POST',
+                     headers: { 'Content-Type': 'application/json' },
+                     body: JSON.stringify({ image: imageData })
+                 });
+                 
+                 const data = await response.json();
+                 
+                 if (data.success && data.annotated_image) {
+                     // Display annotated image
+                     const img = document.getElementById('videoFeed');
+                     img.src = "data:image/jpeg;base64," + data.annotated_image;
+                     
+                     // Update Metrics
+                     const latency = Date.now() - startTime;
+                     document.getElementById("serverLatency").textContent = latency;
+                     
+                     // Approximate FPS (based on latency)
+                     const instantFps = latency > 0 ? Math.round(1000 / latency) : 0;
+                     document.getElementById("serverFps").textContent = instantFps;
+                 }
+                 
+             } catch (err) {
+                 console.error("Frame process error:", err);
+             } finally {
+                 isProcessingFrame = false;
+                 
+                 // Artificial Delay for FPS Limit if needed, otherwise immediate
+                 let delay = 0;
+                 if (currentFpsLimit > 0) {
+                     delay = 1000 / currentFpsLimit;
+                 }
+                 
+                 if (delay > 0) {
+                     setTimeout(() => requestAnimationFrame(processClientFrame), delay);
+                 } else {
+                     requestAnimationFrame(processClientFrame);
+                 }
+             }
+          } else {
+             requestAnimationFrame(processClientFrame);
+          }
+      }
+      
+      // Init Client Cam on Load
+      if (isClientSource) {
+          window.addEventListener('load', startClientCamera);
+      }
+      // -------------------------
+
+      // Update stats
+      function updateStats() {
+        if (isPaused) return;
+        
+        // 1. Fetch Business Stats
+        fetch("/api/stats")
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.success) {
+                const totalId = data.data.total_identities;
+                const totalObs = data.data.total_observations;
+                
+                // Store initial for delta
+                if (!initialStats) {
+                    initialStats = { ids: totalId, obs: totalObs };
+                }
+                
+                // Update Badge
+                document.getElementById("identityCount").textContent = totalId;
+                document.getElementById("observationCount").textContent = totalObs;
+                
+                // Calculate Deltas
+                const deltaId = totalId - initialStats.ids;
+                const deltaObs = totalObs - initialStats.obs;
+                
+                updateDeltaBadge("identityDelta", deltaId);
+                updateDeltaBadge("observationDelta", deltaObs);
+            }
+          })
+          .catch(() => {});
+          
+         // 2. Fetch Stream Status (Only for Server Stream)
+         if (!isClientSource) {
+            fetch("/api/stream_status")
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        const s = data.data;
+                        document.getElementById("serverFps").textContent = s.fps;
+                        document.getElementById("serverLatency").textContent = s.latency_ms;
+                        
+                        const statusBadge = document.getElementById("connectionStatus");
+                        if (s.source_active) {
+                            statusBadge.className = "badge bg-success";
+                            statusBadge.textContent = "Connected";
+                        } else {
+                            statusBadge.className = "badge bg-danger";
+                            statusBadge.textContent = "Signal Lost";
+                        }
+                    }
+                })
+                .catch(() => {});
+         }
+            
+         // 3. Update Live Table
+         fetch("/api/recent_observations?limit=5")
+            .then(r => r.json())
+            .then(data => {
+                if (data.success && data.data.length > 0) {
+                    const tbody = document.getElementById('liveTableBody');
+                    
+                    // If first load or new data
+                    if (data.data[0].id !== lastObsId) {
+                         lastObsId = data.data[0].id; // Update tracker
+                         
+                         let html = '';
+                         data.data.forEach(obs => {
+                             // Handle image path
+                             let imgUrl = obs.image_path;
+                             if (imgUrl && !imgUrl.startsWith('data:') && !imgUrl.startsWith('/') && !imgUrl.startsWith('http')) {
+                                 imgUrl = '/static/' + imgUrl; 
+                                 if (obs.image_path.startsWith('results/')) {
+                                     imgUrl = '/' + obs.image_path;
+                                 }
+                             }
+                             if (!imgUrl) imgUrl = '';
+                             
+                             html += `
+                                <tr>
+                                    <td>
+                                        <div style="width: 100px; height: 60px; overflow: hidden; border-radius: 4px;">
+                                            <img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover;">
+                                        </div>
+                                    </td>
+                                    <td class="align-middle text-white">${obs.timestamp}</td>
+                                    <td class="align-middle">
+                                        <span class="badge bg-primary">${obs.plate_text}</span>
+                                    </td>
+                                    <td class="align-middle text-secondary">${obs.vehicle_type}</td>
+                                    <td class="align-middle text-info">${obs.confidence}</td>
+                                    <td class="align-middle">
+                                        ${obs.accepted ? 
+                                            `<button class="btn btn-sm btn-outline-success" disabled>
+                                                <i class="fas fa-check-double"></i> Accepted!
+                                            </button>` :
+                                            `<button class="btn btn-sm btn-success" onclick="confirmObservation('${obs.id}', this)">
+                                                <i class="fas fa-check"></i> ACC
+                                            </button>`
+                                        }
+                                    </td>
+                                </tr>
+                             `;
+                         });
+                         tbody.innerHTML = html;
+                    }
+                }
+            })
+            .catch(() => {});
+      }
+      
+      function confirmObservation(id, btn) {
+          btn.disabled = true;
+          btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+          
+          fetch(`/api/confirm_observation/${id}`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    btn.className = "btn btn-sm btn-outline-success";
+                    btn.innerHTML = '<i class="fas fa-check-double"></i> Accepted!';
+                    updateStats(); // Refresh counters immediately
+                } else {
+                    btn.className = "btn btn-sm btn-danger";
+                    btn.innerHTML = 'Error';
+                    btn.disabled = false;
+                }
+            })
+            .catch(() => {
+                btn.className = "btn btn-sm btn-danger";
+                btn.innerHTML = 'Error';
+                btn.disabled = false;
+            });
+      }
+      
+      function updateDeltaBadge(id, amount) {
+          const el = document.getElementById(id);
+          if (amount > 0) {
+              el.style.display = "inline-block";
+              el.className = "delta-badge delta-positive";
+              el.textContent = `+${amount} new`;
+          } else {
+              el.style.display = "none";
+          }
+      }
+
+      videoFeed.onerror = function () {
+        document.getElementById("connectionStatus").textContent = "Disconnected";
+        document.getElementById("connectionStatus").className = "badge bg-danger";
+      };
+
+      // Poll every 2 seconds
+      updateStats();
+      setInterval(updateStats, 2000);
+
+      
+      // Auto-set URL input if present
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('source') === 'ipcam') {
+          document.getElementById('sourceType').value = 'ipcam';
+          toggleSourceInputs();
+      }
+    </script>
+  </body>
+</html>

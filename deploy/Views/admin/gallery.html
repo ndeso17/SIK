@@ -1,0 +1,489 @@
+{% extends 'base.html' %}
+{% block title %}Galeri Interaktif - Sistem Identitas Kendaraan{% endblock %}
+{% block page_title %}Galeri Interaktif{% endblock %}
+
+{% block extra_css %}
+<style>
+  .observation-card {
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    overflow: hidden;
+    transition: all 0.2s;
+    cursor: move;
+    background: white;
+  }
+  
+  .observation-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+    border-color: #3b82f6;
+  }
+  
+  .observation-card.sortable-ghost {
+    opacity: 0.4;
+  }
+  
+  .observation-card.sortable-drag {
+    opacity: 0.8;
+    transform: rotate(5deg);
+  }
+  
+  .observation-thumbnail {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+    background: linear-gradient(135deg, #e5e7eb 0%, #d1d5db 100%);
+  }
+  
+  .identity-dropzone {
+    min-height: 200px;
+    border: 2px dashed #d1d5db;
+    border-radius: 12px;
+    padding: 16px;
+    background: #f9fafb;
+    transition: all 0.3s;
+  }
+  
+  .identity-dropzone:hover {
+    border-color: #3b82f6;
+    background: #eff6ff;
+  }
+  
+  .identity-dropzone.sortable-drag-over {
+    border-color: #10b981;
+    background: #d1fae5;
+    transform: scale(1.02);
+  }
+  
+  .identity-card {
+    border: 2px solid #3b82f6;
+    border-radius: 16px;
+    overflow: hidden;
+    background: white;
+  }
+  
+  .identity-header {
+    background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+    color: white;
+    padding: 16px;
+  }
+  
+  .observation-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+    max-height: 70vh;
+    overflow-y: auto;
+    padding: 8px;
+  }
+  
+  .identity-observations {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 8px;
+  }
+  
+  .mini-thumbnail {
+    width: 100%;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 2px solid #e5e7eb;
+  }
+  
+  .empty-dropzone {
+    text-align: center;
+    padding: 40px 20px;
+    color: #9ca3af;
+  }
+  
+  .filter-badge {
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .filter-badge:hover {
+    transform: scale(1.05);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="card mb-4" style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); border: none;">
+  <div class="card-body text-white">
+    <div class="row align-items-center">
+      <div class="col-md-6">
+        <h4 class="mb-1"><i class="fas fa-layer-group"></i> Galeri Interaktif</h4>
+        <p class="mb-0 opacity-75">Kelola pengelompokan kendaraan dengan drag & drop</p>
+      </div>
+      <div class="col-md-6">
+        <div class="d-flex gap-3 justify-content-md-end flex-wrap">
+          <div class="badge bg-white text-primary fs-6">
+            <i class="fas fa-inbox"></i> {{ total_ungrouped }} Belum Terkelompok
+          </div>
+          <div class="badge bg-white text-success fs-6">
+            <i class="fas fa-check"></i> {{ total_grouped }} Sudah Terkelompok
+          </div>
+          <div class="badge bg-white text-info fs-6">
+            <i class="fas fa-layer-group"></i> {{ total_identities }} Grup
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Two Column Layout -->
+<div class="row">
+  <!-- LEFT: Observation Pool -->
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-inbox"></i> Observasi Kendaraan</h5>
+        <select class="form-select form-select-sm w-auto" id="obsFilter" onchange="changeFilter(this.value)">
+          <option value="all" {{ 'selected' if filter_type == 'all' else '' }}>Semuanya</option>
+          <option value="ungrouped" {{ 'selected' if filter_type == 'ungrouped' else '' }}>Belum Terkelompok</option>
+          <option value="grouped" {{ 'selected' if filter_type == 'grouped' else '' }}>Sudah Terkelompok</option>
+        </select>
+      </div>
+      <div class="card-body p-2">
+        {% if observations %}
+        <div id="observationPool" class="observation-grid">
+          {% for obs in observations %}
+          <div class="observation-card" data-obs-id="{{ obs.id }}">
+            {% if obs.annotated_image_path %}
+              {% if obs.annotated_image_path.startswith('results/') %}
+                <img src="/{{ obs.annotated_image_path }}?t={{ image_ts }}" class="observation-thumbnail" alt="Vehicle">
+              {% else %}
+                <img src="{{ url_for('static', filename=obs.annotated_image_path) }}?t={{ image_ts }}" class="observation-thumbnail" alt="Vehicle">
+              {% endif %}
+            {% elif obs.frame_image_path %}
+              {% if obs.frame_image_path.startswith('results/') %}
+                <img src="/{{ obs.frame_image_path }}?t={{ image_ts }}" class="observation-thumbnail" alt="Vehicle">
+              {% else %}
+                <img src="{{ url_for('static', filename=obs.frame_image_path.split('static/')[-1] if 'static/' in obs.frame_image_path else obs.frame_image_path) }}?t={{ image_ts }}" class="observation-thumbnail" alt="Vehicle">
+              {% endif %}
+            {% elif obs.image_path %}
+              {% if obs.image_path.startswith('results/') %}
+                <img src="/{{ obs.image_path }}?t={{ image_ts }}" class="observation-thumbnail" alt="Vehicle">
+              {% else %}
+                <img src="{{ url_for('static', filename=obs.image_path.split('static/')[-1] if 'static/' in obs.image_path else obs.image_path) }}?t={{ image_ts }}" class="observation-thumbnail" alt="Vehicle">
+              {% endif %}
+            {% else %}
+            <div class="observation-thumbnail d-flex align-items-center justify-content-center">
+              <i class="fas fa-car fa-2x text-muted"></i>
+            </div>
+            {% endif %}
+            <div class="p-2">
+              <div class="small fw-bold text-truncate">
+                {% set plate_display = obs.plate_text or (obs.identity.plate_text if obs.identity else None) %}
+                {% if plate_display %}
+                <span class="badge bg-primary">{{ plate_display }}</span>
+                {% else %}
+                <span class="text-muted">No Plate</span>
+                {% endif %}
+              </div>
+              <div class="small text-muted">
+                <i class="fas fa-clock"></i> {{ obs.timestamp.strftime('%d/%m %H:%M') if obs.timestamp else 'N/A' }}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-dropzone">
+          <i class="fas fa-inbox fa-3x mb-3"></i>
+          <p>Tidak ada observasi {{ 'belum terkelompok' if filter_type == 'ungrouped' else '' }}</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Identity Groups -->
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0"><i class="fas fa-layer-group"></i> Grup Identitas</h5>
+        <div class="d-flex gap-2">
+          <select class="form-select form-select-sm w-auto" id="groupSort" onchange="changeSort(this.value)">
+            <option value="recent" {{ 'selected' if sort_by == 'recent' else '' }}>Terbaru</option>
+            <option value="plate" {{ 'selected' if sort_by == 'plate' else '' }}>Berdasarkan Plat</option>
+            <option value="driver" {{ 'selected' if sort_by == 'driver' else '' }}>Berdasarkan Pengemudi</option>
+          </select>
+          <button class="btn btn-sm btn-primary" onclick="openCreateGroupModal()">
+            <i class="fas fa-plus"></i> Buat Grup Baru
+          </button>
+        </div>
+      </div>
+      <div class="card-body p-2" style="max-height: 70vh; overflow-y: auto;">
+        {% if identities %}
+        <div id="identityGroups" class="d-flex flex-column gap-3">
+          {% for identity in identities %}
+          <div class="identity-card">
+            <div class="identity-header">
+              <div class="d-flex justify-content-between align-items-center">
+                <div>
+                  <h6 class="mb-1">
+                    {% if identity.plate_text %}
+                    {{ identity.plate_text }}
+                    {% elif identity.driver_name %}
+                    {{ identity.driver_name }}
+                    {% else %}
+                    Kendaraan #{{ identity.id }}
+                    {% endif %}
+                  </h6>
+                  <div class="small opacity-75">
+                    <span class="badge bg-white text-dark me-1">{{ identity.vehicle_type or 'Unknown' }}</span>
+                    {% if identity.vehicle_color %}
+                    <span class="badge bg-white text-dark">{{ identity.vehicle_color }}</span>
+                    {% endif %}
+                  </div>
+                </div>
+                  <div class="text-end">
+                    <div class="badge bg-white text-primary mb-1">
+                      <i class="fas fa-images"></i> {{ identity.detection_count or 0 }}
+                    </div>
+                    <a href="{{ url_for('admin.vehicle_detail', id=identity.id) }}" class="btn btn-sm btn-light py-0 px-1" title="Lihat Detail">
+                        <i class="fas fa-eye text-primary"></i>
+                    </a>
+                  </div>
+                </div>
+              </div>
+            <div class="identity-dropzone" data-identity-id="{{ identity.id }}">
+              {% set identity_obs = identity.observations.all()[:6] %}
+              {% if identity_obs %}
+              <div class="identity-observations">
+                {% for obs in identity_obs %}
+                {% if obs.annotated_image_path %}
+                  {% if obs.annotated_image_path.startswith('results/') %}
+                    <img src="/{{ obs.annotated_image_path }}?t={{ image_ts }}" class="mini-thumbnail" alt="Vehicle">
+                  {% else %}
+                    <img src="{{ url_for('static', filename=obs.annotated_image_path) }}?t={{ image_ts }}" class="mini-thumbnail" alt="Vehicle">
+                  {% endif %}
+                {% elif obs.frame_image_path %}
+                  {% if obs.frame_image_path.startswith('results/') %}
+                    <img src="/{{ obs.frame_image_path }}?t={{ image_ts }}" class="mini-thumbnail" alt="Vehicle">
+                  {% else %}
+                    <img src="{{ url_for('static', filename=obs.frame_image_path.split('static/')[-1] if 'static/' in obs.frame_image_path else obs.frame_image_path) }}?t={{ image_ts }}" class="mini-thumbnail" alt="Vehicle">
+                  {% endif %}
+                {% elif obs.image_path %}
+                  {% if obs.image_path.startswith('results/') %}
+                    <img src="/{{ obs.image_path }}?t={{ image_ts }}" class="mini-thumbnail" alt="Vehicle">
+                  {% else %}
+                    <img src="{{ url_for('static', filename=obs.image_path.split('static/')[-1] if 'static/' in obs.image_path else obs.image_path) }}?t={{ image_ts }}" class="mini-thumbnail" alt="Vehicle">
+                  {% endif %}
+                {% endif %}
+                {% endfor %}
+              </div>
+              {% else %}
+              <div class="empty-dropzone">
+                <i class="fas fa-inbox fa-2x mb-2"></i>
+                <p class="small mb-0">Tarik observasi ke sini</p>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-dropzone">
+          <i class="fas fa-layer-group fa-3x mb-3"></i>
+          <p>Belum ada grup identitas</p>
+          <button class="btn btn-primary" onclick="openCreateGroupModal()">
+            <i class="fas fa-plus"></i> Buat Grup Pertama
+          </button>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Create Group Modal -->
+<div class="modal fade" id="createGroupModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Buat Grup Identitas Baru</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="createGroupForm">
+          <div class="mb-3">
+            <label class="form-label">Nomor Plat</label>
+            <input type="text" class="form-control" name="plate_text" placeholder="B 1234 XYZ">
+            <div class="form-text">Opsional jika nama pengemudi diisi</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Nama Pengemudi</label>
+            <input type="text" class="form-control" name="driver_name" placeholder="Nama Pengemudi">
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Jenis Kendaraan</label>
+              <select class="form-select" name="vehicle_type">
+                <option value="car">Mobil</option>
+                <option value="motorcycle">Motor</option>
+                <option value="bus">Bus</option>
+                <option value="truck">Truk</option>
+              </select>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Warna Kendaraan</label>
+              <select class="form-select" name="vehicle_color">
+                <option value="putih">Putih</option>
+                <option value="hitam">Hitam</option>
+                <option value="silver">Silver</option>
+                <option value="abu-abu">Abu-abu</option>
+                <option value="merah">Merah</option>
+                <option value="biru">Biru</option>
+                <option value="kuning">Kuning</option>
+                <option value="hijau">Hijau</option>
+                <option value="coklat">Coklat</option>
+                <option value="orange">Orange</option>
+              </select>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+        <button type="button" class="btn btn-primary" onclick="submitCreateGroup()">Buat Grup</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Sortable.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+
+<script>
+  // Initialize Sortable on observation pool
+  const obsPool = document.getElementById('observationPool');
+  if (obsPool) {
+    new Sortable(obsPool, {
+      group: {
+        name: 'observations',
+        pull: 'clone',
+        put: false
+      },
+      animation: 150,
+      sort: false,
+      ghostClass: 'sortable-ghost',
+      dragClass: 'sortable-drag'
+    });
+  }
+
+  // Initialize Sortable on each identity dropzone
+  document.querySelectorAll('.identity-dropzone').forEach(zone => {
+    new Sortable(zone, {
+      group: {
+        name: 'observations',
+        put: true
+      },
+      animation: 150,
+      onAdd: function(evt) {
+        const obsId = evt.item.dataset.obsId;
+        const identityId = evt.to.dataset.identityId;
+        
+        // Remove the cloned item immediately
+        evt.item.remove();
+        
+        // Show confirmation
+        moveObservationToIdentity(obsId, identityId);
+      }
+    });
+  });
+
+  function moveObservationToIdentity(obsId, identityId) {
+    Swal.fire({
+      title: 'Pindahkan Observasi?',
+      text: `Pindahkan observasi ini ke grup identitas?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Ya, Pindahkan',
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#3b82f6'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        fetch(`/api/observations/${obsId}/move`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({identity_id: parseInt(identityId)})
+        })
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) {
+            Swal.fire({
+              icon: 'success',
+              title: 'Berhasil!',
+              text: data.message,
+              timer: 1500,
+              showConfirmButton: false
+            }).then(() => {
+              location.reload();
+            });
+          } else {
+            Swal.fire('Error', data.error, 'error');
+          }
+        })
+        .catch(e => {
+          Swal.fire('Error', 'Gagal menghubungi server', 'error');
+        });
+      }
+    });
+  }
+
+  function changeFilter(filter) {
+    window.location.href = `{{ url_for('admin.gallery') }}?filter=${filter}&sort={{ sort_by }}`;
+  }
+
+  function changeSort(sort) {
+    window.location.href = `{{ url_for('admin.gallery') }}?filter={{ filter_type }}&sort=${sort}`;
+  }
+
+  function openCreateGroupModal() {
+    new bootstrap.Modal(document.getElementById('createGroupModal')).show();
+  }
+
+  function submitCreateGroup() {
+    const form = document.getElementById('createGroupForm');
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+
+    if (!data.plate_text && !data.driver_name) {
+      Swal.fire('Error', 'Nomor plat atau nama pengemudi harus diisi', 'error');
+      return;
+    }
+
+    fetch('/api/identities/create', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(resp => {
+      if (resp.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Berhasil!',
+          text: resp.message,
+          timer: 1500,
+          showConfirmButton: false
+        }).then(() => {
+          location.reload();
+        });
+      } else {
+        Swal.fire('Error', resp.error, 'error');
+      }
+    })
+    .catch(e => {
+      Swal.fire('Error', 'Gagal menghubungi server', 'error');
+    });
+  }
+</script>
+{% endblock %}

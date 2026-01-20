@@ -1,0 +1,566 @@
+{% extends 'base.html' %}
+
+{% block title %}Observasi - Sistem Identitas Kendaraan{% endblock %}
+{% block page_title %}Semua Observasi{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h5 class="mb-0">Semua Observasi</h5>
+        <p class="text-muted mb-0">Riwayat lengkap deteksi kendaraan</p>
+    </div>
+    <button class="btn btn-primary" onclick="exportCSV()">
+        <i class="fas fa-download"></i> Ekspor CSV
+    </button>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" class="row g-3">
+            <div class="col-md-3">
+                <input type="text" class="form-control" name="search" placeholder="Cari plat..." 
+                       value="{{ search }}">
+            </div>
+            <div class="col-md-2">
+                <select class="form-select" name="source">
+                    <option value="all" {% if source_filter == 'all' %}selected{% endif %}>Semua Sumber</option>
+                    <option value="image" {% if source_filter == 'image' %}selected{% endif %}>Gambar</option>
+                    <option value="video" {% if source_filter == 'video' %}selected{% endif %}>Video</option>
+                    <option value="webcam" {% if source_filter == 'webcam' %}selected{% endif %}>Webcam</option>
+                    <option value="ipcam" {% if source_filter == 'ipcam' %}selected{% endif %}>Kamera IP</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select class="form-select" name="ocr">
+                    <option value="all" {% if ocr_filter == 'all' %}selected{% endif %}>Semua OCR</option>
+                    <option value="success" {% if ocr_filter == 'success' %}selected{% endif %}>OCR Sukses</option>
+                    <option value="failed" {% if ocr_filter == 'failed' %}selected{% endif %}>OCR Gagal</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-primary me-2">
+                    <i class="fas fa-search"></i> Filter
+                </button>
+                <a href="{{ url_for('admin.observations_list') }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-times"></i> Reset
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Observations Table -->
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Waktu</th>
+                        <th>Plat Nomor</th>
+                        <th>Jenis</th>
+                        <th>Warna</th>
+                        <th>Sumber</th>
+                        <th>OCR</th>
+                        <th>Identitas</th>
+                        <th>Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for obs in observations %}
+                    <tr>
+                        <td><code>{{ obs.id }}</code></td>
+                        <td>{{ obs.timestamp.strftime('%d/%m/%Y %H:%M:%S') if obs.timestamp else '-' }}</td>
+                        <td>
+                            {% if obs.plate_text %}
+                                <strong>{{ obs.plate_text }}</strong>
+                            {% elif obs.plate_image_path %}
+                                <span class="badge bg-warning text-dark">Terdeteksi (Manual)</span>
+                            {% else %}
+                                <span class="badge badge-ocr-failed">Tanpa Plat</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% set type_map = {'car': 'Mobil', 'motorcycle': 'Motor', 'bus': 'Bus', 'truck': 'Truk'} %}
+                            <span class="badge bg-secondary">{{ type_map.get(obs.vehicle_type, obs.vehicle_type) or 'Tidak Diketahui' }}</span>
+                        </td>
+                        <td>
+                            {% if obs.vehicle_color %}
+                                {% set color_map = {
+                                    'merah': '#ef4444', 
+                                    'hitam': '#000000', 
+                                    'putih': '#ffffff', 
+                                    'biru': '#2563eb', 
+                                    'kuning': '#facc15',
+                                    'abu-abu': '#6b7280', 
+                                    'hijau': '#16a34a'
+                                } %}
+                                {% set bg_color = color_map.get((obs.vehicle_color or '')|lower, '#d1d5db') %}
+                                {% set text_color = 'black' if bg_color in ['#ffffff', '#facc15', '#d1d5db'] else 'white' %}
+                                <span class="badge" style="background-color: {{ bg_color }}; color: {{ text_color }}; border: 1px solid rgba(0,0,0,0.1);">{{ obs.vehicle_color }}</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Tidak Diketahui</span>
+                            {% endif %}
+                        </td>
+                        <td><span class="badge bg-info">{{ obs.source_type or 'image' }}</span></td>
+                        <td>
+                            {% if obs.is_manually_annotated and obs.plate_box %}
+                                <span class="badge bg-success">Manual</span>
+                            {% elif obs.ocr_success %}
+                                <span class="badge badge-ocr-success">{{ (obs.plate_confidence * 100)|round|int }}%</span>
+                            {% elif obs.ocr_attempted %}
+                                <span class="badge badge-ocr-failed">Gagal</span>
+                            {% else %}
+                                <span class="badge bg-secondary">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{{ url_for('admin.vehicle_detail', id=obs.vehicle_id) }}">
+                                <code>#{{ obs.vehicle_id }}</code>
+                            </a>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-primary" onclick="viewObservation({{ obs.id }})" title="Lihat">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button class="btn btn-outline-danger" onclick="deleteObservation({{ obs.id }})" title="Hapus">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="9" class="text-center text-muted">Tidak ada observasi ditemukan</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if pagination.pages > 1 %}
+<nav class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if pagination.has_prev %}
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('admin.observations_list', page=pagination.prev_num, search=search, source=source_filter, ocr=ocr_filter) }}">
+                    <i class="fas fa-chevron-left"></i>
+                </a>
+            </li>
+        {% endif %}
+        
+        {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+            {% if p %}
+                <li class="page-item {{ 'active' if p == pagination.page else '' }}">
+                    <a class="page-link" href="{{ url_for('admin.observations_list', page=p, search=search, source=source_filter, ocr=ocr_filter) }}">{{ p }}</a>
+                </li>
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+        {% endfor %}
+        
+        {% if pagination.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('admin.observations_list', page=pagination.next_num, search=search, source=source_filter, ocr=ocr_filter) }}">
+                    <i class="fas fa-chevron-right"></i>
+                </a>
+            </li>
+        {% endif %}
+    </ul>
+</nav>
+<p class="text-center text-muted">
+    Menampilkan halaman {{ pagination.page }} dari {{ pagination.pages }} (Total {{ pagination.total }})
+</p>
+{% endif %}
+
+<!-- Observation Detail Modal -->
+<div class="modal fade" id="observationModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Detail Observasi</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="observationModalBody">
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Memuat...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Image Zoom Modal -->
+<div class="modal fade" id="imageZoomModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="zoomModalTitle">Gambar</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center bg-dark p-4">
+                <img id="zoomModalImage" class="img-fluid" style="max-height: 75vh; border-radius: 8px;">
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .thumbnail-card {
+        cursor: pointer;
+        transition: all 0.3s;
+        border: 2px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 12px;
+        background: white;
+    }
+
+    .thumbnail-card:hover {
+        transform: translateY(-4px);
+        border-color: #3b82f6;
+        box-shadow: 0 6px 16px rgba(59, 130, 246, 0.3);
+    }
+
+    .thumbnail-card img {
+        width: 100%;
+        height: 150px;
+        object-fit: cover;
+        border-radius: 8px;
+    }
+
+    .empty-thumbnail {
+        height: 150px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: #f3f4f6;
+        border-radius: 8px;
+        color: #9ca3af;
+    }
+
+    .empty-thumbnail i {
+        margin-bottom: 8px;
+    }
+
+    .thumbnail-swap {
+        cursor: pointer;
+        transition: all 0.2s;
+        border: 3px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 8px;
+        background: white;
+        text-align: center;
+        height: 100%;
+    }
+
+    .thumbnail-swap:hover {
+        transform: scale(1.05);
+        border-color: #93c5fd;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+    }
+
+    .thumbnail-swap.active {
+        border-color: #3b82f6;
+        background: #eff6ff;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .thumbnail-swap-img-wrapper {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        overflow: hidden;
+        border-radius: 4px;
+        background: #f3f4f6;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .thumbnail-swap-img-wrapper img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .empty-thumbnail-swap {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: #f3f4f6;
+        border-radius: 4px;
+        color: #9ca3af;
+    }
+
+    .thumbnail-swap-label {
+        margin-top: 8px;
+        margin-bottom: 0;
+        font-size: 0.75rem;
+        line-height: 1.2;
+        min-height: 2.4em;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    #focusImageContainer {
+        min-height: 300px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function viewObservation(id) {
+        const modal = new bootstrap.Modal(document.getElementById('observationModal'));
+        modal.show();
+        
+        fetch(`/api/observations/${id}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const obs = data.data;
+                    
+                    // Helper function to get correct image path
+                    function getImagePath(path) {
+                        if (!path) return null;
+                        if (path.startsWith('/')) return path;
+                        if (path.includes('static/')) {
+                            return '/static/' + path.split('static/').pop();
+                        }
+                        if (path.includes('results/')) {
+                            return '/' + path;
+                        }
+                        return '/static/' + path;
+                    }
+                    
+                    // Determine image paths
+                    const mainImagePath = getImagePath(obs.annotated_image_path || obs.frame_image_path || obs.image_path);
+                    const plateImagePath = getImagePath(obs.plate_image_path);
+                    const driverImagePath = getImagePath(obs.driver_image_path);
+                    const vehicleImagePath = mainImagePath;
+                    
+                    let html = `
+                        <div class="row">
+                            <!-- Left: Main Image + Thumbnails -->
+                            <div class="col-md-5">
+                                <!-- Main Focus Image -->
+                                <div class="mb-3">
+                                    <h6 class="text-muted mb-2"><i class="fas fa-image"></i> Gambar Fokus</h6>
+                                    <div id="focusImageContainer" class="border rounded p-2 bg-light">
+                                        ${mainImagePath 
+                                            ? `<img id="focusImage" src="${mainImagePath}" class="img-fluid rounded shadow-sm" style="width: 100%; max-height: 350px; object-fit: contain;" alt="Vehicle">`
+                                            : '<div class="bg-white rounded d-flex align-items-center justify-content-center" style="height: 300px;"><i class="fas fa-image fa-3x text-muted"></i></div>'
+                                        }
+                                    </div>
+                                </div>
+                                
+                                <!-- Detail Crop Thumbnails -->
+                                <div>
+                                    <h6 class="text-muted mb-2"><i class="fas fa-images"></i> Detail Crop</h6>
+                                    <div class="row g-2">
+                                        <div class="col-4">
+                                            <div class="thumbnail-swap ${vehicleImagePath ? 'active' : ''}" 
+                                                 data-image="${vehicleImagePath || ''}" 
+                                                 data-title="Kendaraan"
+                                                 onclick="swapFocusImage(this)">
+                                                ${vehicleImagePath 
+                                                    ? `<div class="thumbnail-swap-img-wrapper">
+                                                           <img src="${vehicleImagePath}" alt="Kendaraan">
+                                                       </div>
+                                                       <p class="thumbnail-swap-label"><i class="fas fa-car"></i> Kendaraan</p>`
+                                                    : `<div class="empty-thumbnail-swap">
+                                                           <i class="fas fa-car fa-2x"></i>
+                                                       </div>
+                                                       <p class="thumbnail-swap-label">N/A</p>`
+                                                }
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="thumbnail-swap" 
+                                                 data-image="${plateImagePath || ''}" 
+                                                 data-title="Plat Nomor"
+                                                 onclick="swapFocusImage(this)">
+                                                ${plateImagePath 
+                                                    ? `<div class="thumbnail-swap-img-wrapper">
+                                                           <img src="${plateImagePath}" alt="Plat">
+                                                       </div>
+                                                       <p class="thumbnail-swap-label"><i class="fas fa-id-card"></i> Plat</p>`
+                                                    : `<div class="empty-thumbnail-swap">
+                                                           <i class="fas fa-id-card fa-2x"></i>
+                                                       </div>
+                                                       <p class="thumbnail-swap-label">N/A</p>`
+                                                }
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="thumbnail-swap" 
+                                                 data-image="${driverImagePath || ''}" 
+                                                 data-title="Wajah/Badan"
+                                                 onclick="swapFocusImage(this)">
+                                                ${driverImagePath 
+                                                    ? `<div class="thumbnail-swap-img-wrapper">
+                                                           <img src="${driverImagePath}" alt="Wajah/Badan">
+                                                       </div>
+                                                       <p class="thumbnail-swap-label"><i class="fas fa-user"></i> Wajah/Badan</p>`
+                                                    : `<div class="empty-thumbnail-swap">
+                                                           <i class="fas fa-user fa-2x"></i>
+                                                       </div>
+                                                       <p class="thumbnail-swap-label">N/A</p>`
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Right: Info Table -->
+                            <div class="col-md-7">
+                                <h6 class="text-muted mb-3"><i class="fas fa-info-circle"></i> Informasi Detail</h6>
+                                <table class="table table-sm table-borderless">
+                                    <tr><th width="40%">ID</th><td><code>${obs.id}</code></td></tr>
+                                    <tr><th>Waktu</th><td>${obs.timestamp || '-'}</td></tr>
+                                    <tr>
+                                        <th>Plat Nomor</th>
+                                        <td>
+                                            ${obs.plate_text 
+                                                ? `<strong>${obs.plate_text}</strong>` 
+                                                : plateImagePath 
+                                                    ? '<span class="badge bg-warning text-dark">Terdeteksi (Manual)</span>'
+                                                    : '<span class="badge badge-ocr-failed">N/A</span>'
+                                            }
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>Keyakinan OCR</th>
+                                        <td>
+                                            ${obs.is_manually_annotated 
+                                                ? '<span class="badge bg-success">Manual</span>'
+                                                : obs.plate_confidence 
+                                                    ? `${(obs.plate_confidence * 100).toFixed(0)}%`
+                                                    : 'N/A'
+                                            }
+                                        </td>
+                                    </tr>
+                                    <tr><th>Jenis</th><td>${obs.vehicle_type || 'Tidak Diketahui'}</td></tr>
+                                    <tr><th>Warna</th><td>${obs.vehicle_color || 'Tidak Diketahui'}</td></tr>
+                                    <tr><th>Sumber</th><td><span class="badge bg-info">${obs.source_type || 'image'}</span></td></tr>
+                                    <tr>
+                                        <th>Pengemudi</th>
+                                        <td>${obs.driver_detected ? '<span class="badge bg-success">Terdeteksi</span>' : '<span class="badge bg-secondary">Tidak terdeteksi</span>'}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Wajah/Badan</th>
+                                        <td>${obs.face_detected || obs.driver_detected ? '<span class="badge bg-success">Ada</span>' : '<span class="badge bg-secondary">Tidak ada</span>'}</td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('observationModalBody').innerHTML = html;
+                }
+            });
+    }
+    
+    function swapFocusImage(thumbnail) {
+        const imagePath = thumbnail.dataset.image;
+        const imageTitle = thumbnail.dataset.title;
+        
+        if (!imagePath) return; // Don't swap if no image
+        
+        // Update focus image
+        const focusImg = document.getElementById('focusImage');
+        if (focusImg) {
+            focusImg.src = imagePath;
+            focusImg.alt = imageTitle;
+        }
+        
+        // Update active state
+        document.querySelectorAll('.thumbnail-swap').forEach(t => t.classList.remove('active'));
+        thumbnail.classList.add('active');
+    }
+    
+    function zoomImage(card) {
+        // Keep zoom functionality for backward compatibility
+        const img = card.querySelector('img');
+        if (!img) return;
+        
+        const zoomModal = new bootstrap.Modal(document.getElementById('imageZoomModal'));
+        document.getElementById('zoomModalImage').src = img.src;
+        document.getElementById('zoomModalTitle').textContent = img.dataset.title || 'Gambar';
+        zoomModal.show();
+    }
+    
+    function deleteObservation(id) {
+        // Simple confirm for now or use SweetAlert in separate task if needed
+        Swal.fire({
+                title: 'Hapus Observasi?',
+                text: 'Observasi akan dihapus secara permanen. Lanjutkan?',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Ya, Hapus',
+                cancelButtonText: 'Batal'
+            }).then(result => {
+                if (!result.isConfirmed) return;
+                fetch(`/api/observations/${id}`, { method: 'DELETE' })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            location.reload();
+                        } else {
+                            Swal.fire('Error', data.error || 'Gagal menghapus', 'error');
+                        }
+                    })
+                    .catch(e => Swal.fire('Error', 'API Connection Error', 'error'));
+            });
+    }
+    
+    function exportCSV() {
+        fetch('/api/observations?per_page=10000')
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const rows = [
+                        ['ID', 'Timestamp', 'Plate', 'Confidence', 'Type', 'Color', 'Source', 'Identity ID']
+                    ];
+                    data.data.forEach(obs => {
+                        rows.push([
+                            obs.id,
+                            obs.timestamp,
+                            obs.plate_text || '',
+                            obs.plate_confidence,
+                            obs.vehicle_type || '',
+                            obs.vehicle_color || '',
+                            obs.source_type || '',
+                            obs.vehicle_id
+                        ]);
+                    });
+                    
+                    const csv = rows.map(r => r.join(',')).join('\n');
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `observasi_${new Date().toISOString().split('T')[0]}.csv`;
+                    a.click();
+                }
+            });
+    }
+</script>
+{% endblock %}
