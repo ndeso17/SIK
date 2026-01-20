@@ -686,7 +686,7 @@ Lisensi MIT - Lihat file LICENSE untuk detailnya.
 
 ## 👥 Kontributor
 
-[![Contributors](https://contrib.rocks/image?repo=ndeso17/SIK)](https://github.com/ndeso17/SIK/graphs/contributors)
+- [ndeso17](https://github.com/ndeso17)
 
 ---
 
