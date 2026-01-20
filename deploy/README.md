@@ -686,7 +686,9 @@ Lisensi MIT - Lihat file LICENSE untuk detailnya.
 
 ## 👥 Kontributor
 
-- [ndeso17](https://github.com/ndeso17)
+<a href="https://github.com/ndeso17">
+  <img src="https://github.com/ndeso17.png" width="50" height="50" style="border-radius: 50%;" alt="ndeso17" />
+</a>
 
 ---
 
